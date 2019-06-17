@@ -134,7 +134,9 @@ TODO
 TODO
 
 ## Code of Conduct
-TODO
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
 
 ## License
-TODO
+Apache 2.0 - Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+See [LICENSE](LICENSE)
