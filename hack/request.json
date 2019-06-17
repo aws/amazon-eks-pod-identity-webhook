@@ -1,0 +1,50 @@
+{
+  "kind": "AdmissionReview",
+  "request": {
+    "uid": "918ef1dc-928f-4525-99ef-988389f263c3",
+    "namespace": "default",
+    "kind": {
+      "group": "",
+      "version": "v1",
+      "kind": "Pod"
+    },
+    "operation": "CREATE",
+    "userInfo": {
+      "username": "kubernetes-admin",
+      "uid": "heptio-authenticator-aws:111122223333:AROAR2TG44V5CLZCFPOZO",
+      "groups": [
+        "system:authenticated",
+        "system:masters"
+      ]
+    },
+    "object": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "balajilovesoreos",
+        "uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+      },
+      "spec": {
+        "containers": [
+          {
+            "image": "amazonlinux",
+            "name": "balajilovesoreos",
+            "volumeMounts": [
+                {
+                    "mountPath": "/scratch",
+                    "name": "scratch"
+                }
+            ]
+          }
+        ],
+        "serviceAccountName": "default",
+        "volumes": [
+            {
+                "emptyDir": {},
+                "name": "scratch"
+            }
+        ]
+      }
+    }
+  }
+}

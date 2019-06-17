@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam-for-pods
+  namespace: eks
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iam-for-pods
+  template:
+    metadata:
+      labels:
+        app: iam-for-pods
+    spec:
+      serviceAccountName: iam-for-pods
+      containers:
+      - name: iam-for-pods
+        image: IMAGE
+        imagePullPolicy: Always
+        command:
+        - /webhook
+        - --in-cluster
+        - --namespace=eks
+        - --service-name=iam-for-pods
+        - --tls-secret=iam-for-pods
+        - --annotation-prefix=eks.amazonaws.com
+        - --token-audience=sts.amazonaws.com
+        - --logtostderr
+        volumeMounts:
+        - name: webhook-certs
+          mountPath: /var/run/app/certs
+          readOnly: false
+      volumes:
+      - name: webhook-certs
+        emptyDir: {}

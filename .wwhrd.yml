@@ -1,0 +1,13 @@
+# github.com/frapposelli/wwhrd
+# wwhrd check
+---
+whitelist:
+- Apache-2.0
+- MIT
+- ISC
+- NewBSD
+- FreeBSD
+
+exceptions:
+- github.com/opencontainers/go-digest/... # uses Apache-2.0
+- github.com/hashicorp/golang-lru/... # Mozilla

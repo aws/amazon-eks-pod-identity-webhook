@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: iam-for-pods
+  namespace: eks
+spec:
+  ports:
+  - port: 443
+    targetPort: 443
+  selector:
+    app: iam-for-pods

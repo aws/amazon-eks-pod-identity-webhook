@@ -1,0 +1,5 @@
+*.swp
+amazon-eks-pod-identity-webhook
+deploy/mutatingwebhook-ca-bundle.yaml
+deploy/deployment.yaml
+build
