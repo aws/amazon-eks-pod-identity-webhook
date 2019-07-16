@@ -18,16 +18,33 @@ push: docker
 	eval $$(aws ecr get-login --registry-ids $(REGISTRY_ID) --no-include-email)
 	docker push $(IMAGE)
 
+build: amazon-eks-pod-identity-webhook
+
 amazon-eks-pod-identity-webhook:
 	go build
 
-serve-local: amazon-eks-pod-identity-webhook
+certs/tls.key:
+	mkdir -p certs
+	openssl req \
+		-x509 \
+		-newkey rsa:2048 \
+		-keyout certs/tls.key \
+		-out certs/tls.cert \
+		-days 365 \
+		-nodes \
+		-subj "/CN=127.0.0.1"
+
+local-serve: amazon-eks-pod-identity-webhook certs/tls.key
 	./amazon-eks-pod-identity-webhook \
 		--port 8443 \
-		--in-cluster=false
+		--in-cluster=false \
+		--tls-key=./certs/tls.key \
+		--tls-cert=./certs/tls.cert \
+		--kubeconfig=$$HOME/.kube/config
 
 local-request:
-	curl \
+	@curl \
+		-s \
 		-k \
 		-H "Content-Type: application/json" \
 		-X POST \
@@ -59,3 +76,9 @@ delete-config:
 	kubectl delete -f deploy/service.yaml
 	kubectl delete -f deploy/deployment.yaml
 	kubectl delete -f deploy/auth.yaml
+
+clean:
+	rm -rf ./amazon-eks-pod-identity-webhook
+	rm -rf ./certs/
+
+.PHONY: docker push build local-serve local-request cluster-up cluster-down prep-config deploy-config delete-config clean
