@@ -91,25 +91,29 @@ This webhook is for mutating pods that will require AWS IAM access.
 Usage of amazon-eks-pod-identity-webhook:
       --alsologtostderr                  log to standard error as well as files
       --annotation-prefix string         The Service Account annotation to look for (default "eks.amazonaws.com")
-      --cert-dir string                  (out-of-cluster) Directory to save certificates (default "/etc/webhook/certs")
-      --cert-duration duration           (out-of-cluster) Lifetime for self-signed certificate (default 8760h0m0s)
-      --in-cluster                       Use in-cluster auth (default true)
+      --in-cluster                       Use in-cluster authentication and certificate request API (default true)
       --kube-api string                  (out-of-cluster) The url to the API server
-      --kubeconfig string                (out-of-cluster) Absolute path to the API server kubeconfig file (default "~/.kube/config")
+      --kubeconfig string                (out-of-cluster) Absolute path to the API server kubeconfig file
       --log_backtrace_at traceLocation   when logging hits line file:N, emit a stack trace (default :0)
       --log_dir string                   If non-empty, write log files in this directory
-      --logtostderr                      log to standard error instead of files
+      --log_file string                  If non-empty, use this log file
+      --log_file_max_size uint           Defines the maximum size a log file can grow to. Unit is megabytes. If the value is 0, the maximum file size is unlimited. (default 1800)
+      --logtostderr                      log to standard error instead of files (default true)
       --namespace string                 (in-cluster) The namespace name this webhook and the tls secret resides in (default "eks")
       --port int                         Port to listen on (default 443)
       --service-name string              (in-cluster) The service name fronting this webhook (default "iam-for-pods")
+      --skip_headers                     If true, avoid header prefixes in the log messages
+      --skip_log_headers                 If true, avoid headers when openning log files
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
+      --tls-cert string                  (out-of-cluster) TLS certificate file path (default "/etc/webhook/certs/tls.cert")
+      --tls-key string                   (out-of-cluster) TLS key file path (default "/etc/webhook/certs/tls.key")
       --tls-secret string                (in-cluster) The secret name for storing the TLS serving cert (default "iam-for-pods")
       --token-audience string            The default audience for tokens. Can be overridden by annotation (default "sts.amazonaws.com")
       --token-expiration int             The token expiration (default 86400)
       --token-mount-path string          The path to mount tokens (default "/var/run/secrets/eks.amazonaws.com/serviceaccount")
-  -v, --v Level                          log level for V logs
+  -v, --v Level                          number for the log level verbosity
+      --version                          Display the version and exit
       --vmodule moduleSpec               comma-separated list of pattern=N settings for file-filtered logging
-      --webhook-config string            (out-of-cluster) Path for where to write the webhook config file for the API server to consume (default "/etc/webhook/config.yaml")
 ```
 
 ## Installation
@@ -135,7 +139,6 @@ TODO
 
 ## Code of Conduct
 See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-
 
 ## License
 Apache 2.0 - Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.

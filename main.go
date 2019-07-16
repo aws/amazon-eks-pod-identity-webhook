@@ -21,9 +21,8 @@ import (
 	"crypto/x509/pkix"
 	goflag "flag"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"net/url"
+	"os"
 	"time"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cert"
@@ -35,6 +34,8 @@ import (
 	"k8s.io/klog"
 )
 
+var webhookVersion = "v0.1.0"
+
 func main() {
 	port := flag.Int("port", 443, "Port to listen on")
 
@@ -44,21 +45,22 @@ func main() {
 	// and use pflag.Flag.Annotations
 	kubeconfig := flag.String("kubeconfig", "", "(out-of-cluster) Absolute path to the API server kubeconfig file")
 	apiURL := flag.String("kube-api", "", "(out-of-cluster) The url to the API server")
-	webhookConfig := flag.String("webhook-config", "/etc/webhook/config.yaml", "(out-of-cluster) Path for where to write the webhook config file for the API server to consume")
-	certDirectory := flag.String("cert-dir", "/etc/webhook/certs", "(out-of-cluster) Directory to save certificates")
-	selfSignedLife := flag.Duration("cert-duration", time.Hour*24*365, "(out-of-cluster) Lifetime for self-signed certificate")
+	tlsKeyFile := flag.String("tls-key", "/etc/webhook/certs/tls.key", "(out-of-cluster) TLS key file path")
+	tlsCertFile := flag.String("tls-cert", "/etc/webhook/certs/tls.cert", "(out-of-cluster) TLS certificate file path")
 
-	// in-cluster kubeconfig / TLS options
+	// in-cluster TLS options
 	inCluster := flag.Bool("in-cluster", true, "Use in-cluster authentication and certificate request API")
-	tlsSecret := flag.String("tls-secret", "iam-for-pods", "(in-cluster) The secret name for storing the TLS serving cert")
 	serviceName := flag.String("service-name", "iam-for-pods", "(in-cluster) The service name fronting this webhook")
 	namespaceName := flag.String("namespace", "eks", "(in-cluster) The namespace name this webhook and the tls secret resides in")
+	tlsSecret := flag.String("tls-secret", "iam-for-pods", "(in-cluster) The secret name for storing the TLS serving cert")
 
 	// annotation/volume configurations
 	annotationPrefix := flag.String("annotation-prefix", "eks.amazonaws.com", "The Service Account annotation to look for")
 	audience := flag.String("token-audience", "sts.amazonaws.com", "The default audience for tokens. Can be overridden by annotation")
 	mountPath := flag.String("token-mount-path", "/var/run/secrets/eks.amazonaws.com/serviceaccount", "The path to mount tokens")
 	tokenExpiration := flag.Int64("token-expiration", 86400, "The token expiration")
+
+	version := flag.Bool("version", false, "Display the version and exit")
 
 	klog.InitFlags(goflag.CommandLine)
 	// Add klog CommandLine flags to pflag CommandLine
@@ -69,6 +71,11 @@ func main() {
 	// trick goflag.CommandLine into thinking it was called.
 	// klog complains if its not been parsed
 	_ = goflag.CommandLine.Parse([]string{})
+
+	if *version {
+		fmt.Println(webhookVersion)
+		os.Exit(0)
+	}
 
 	config, err := clientcmd.BuildConfigFromFlags(*apiURL, *kubeconfig)
 	if err != nil {
@@ -105,9 +112,7 @@ func main() {
 
 	if *inCluster {
 		csr := &x509.CertificateRequest{
-			Subject: pkix.Name{
-				CommonName: fmt.Sprintf("%s.%s.svc", *serviceName, *namespaceName),
-			},
+			Subject: pkix.Name{CommonName: fmt.Sprintf("%s.%s.svc", *serviceName, *namespaceName)},
 			/*
 				// TODO: EKS Signer only allows SANS for ec2-approved domains
 				DNSNames: []string{
@@ -134,29 +139,18 @@ func main() {
 		defer certManager.Stop()
 
 		tlsConfig.GetCertificate = func(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			cert := certManager.Current()
-			if cert == nil {
+			certificate := certManager.Current()
+			if certificate == nil {
 				return nil, fmt.Errorf("no serving certificate available for the webhook, is the CSR approved?")
 			}
-			return cert, nil
+			return certificate, nil
 		}
 	} else {
-		generator := cert.NewSelfSignedGenerator("localhost", *certDirectory, *selfSignedLife)
-		tlsConfig.GetCertificate = generator.GetCertificateFn()
-
-		uri, err := url.Parse(fmt.Sprintf("https://localhost:%d", *port))
+		certificate, err := tls.LoadX509KeyPair(*tlsCertFile, *tlsKeyFile)
 		if err != nil {
-			klog.Fatalf("Error setting up server: %+v", err)
+			klog.Fatalf("failed to load TLS cert and key: %v", err)
 		}
-		manager := cert.NewWebhookConfigManager(*uri, generator)
-		configBytes, err := manager.GenerateConfig()
-		if err != nil {
-			klog.Fatalf("Error creating webhook config: %+v", err)
-		}
-		err = ioutil.WriteFile(*webhookConfig, configBytes, 0644)
-		if err != nil {
-			klog.Fatalf("Error writing webhook config: %+v", err)
-		}
+		tlsConfig.Certificates = []tls.Certificate{certificate}
 	}
 
 	klog.Info("Creating server")
