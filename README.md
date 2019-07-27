@@ -65,7 +65,7 @@ This webhook is for mutating pods that will require AWS IAM access.
         image: container-image:version
     ### Everything below is added by the webhook ###
         env:
-        - name: AWS_IAM_ROLE_ARN
+        - name: AWS_ROLE_ARN
           value: "arn:aws:iam::111122223333:role/s3-reader"
         - name: AWS_WEB_IDENTITY_TOKEN_FILE
           value: "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"

@@ -18,8 +18,6 @@ push: docker
 	eval $$(aws ecr get-login --registry-ids $(REGISTRY_ID) --no-include-email)
 	docker push $(IMAGE)
 
-build: amazon-eks-pod-identity-webhook
-
 amazon-eks-pod-identity-webhook:
 	go build
 
@@ -77,7 +75,7 @@ delete-config:
 	kubectl delete -f deploy/deployment.yaml
 	kubectl delete -f deploy/auth.yaml
 
-clean:
+clean::
 	rm -rf ./amazon-eks-pod-identity-webhook
 	rm -rf ./certs/
 

@@ -146,7 +146,7 @@ type patchOperation struct {
 
 func addEnvToContainer(container *corev1.Container, mountPath, tokenName, volName, roleName string) {
 	reservedKeys := map[string]string{
-		"AWS_IAM_ROLE_ARN":            "",
+		"AWS_ROLE_ARN":                "",
 		"AWS_WEB_IDENTITY_TOKEN_FILE": "",
 	}
 	for _, env := range container.Env {
@@ -165,7 +165,7 @@ func addEnvToContainer(container *corev1.Container, mountPath, tokenName, volNam
 
 	env := container.Env
 	env = append(env, corev1.EnvVar{
-		Name:  "AWS_IAM_ROLE_ARN",
+		Name:  "AWS_ROLE_ARN",
 		Value: roleName,
 	})
 	env = append(env, corev1.EnvVar{

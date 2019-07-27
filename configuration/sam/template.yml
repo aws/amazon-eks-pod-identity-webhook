@@ -1,0 +1,32 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  PipelinesControlledEcrRepository:
+    Type: String
+    Description: The ECR repository name to pull the image from.
+  ImageTag:
+    Type: String
+    Description: The tag of the image to deploy.
+  ImageDigest:
+    Type: String
+    Description: The digest of the image to deploy.
+
+Resources:
+  # Cloudformation requires at least one resource in the stack. Create a trivial
+  # resource so the stack can still be created and still be updated when the
+  # source image is updated.
+  taskdefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+        - Name: "AWSWesleyClusterEventWatcher"
+          Image: !Sub "${PipelinesControlledEcrRepository}@${ImageDigest}"
+          Cpu: 10
+          Memory: 500
+
+Outputs:
+  StackArn:
+    Description: Don't remove this output! Pipelines needs this to do its association. (And LPT. Remvoing will break things)
+    Value: {Ref: 'AWS::StackId'}
+...

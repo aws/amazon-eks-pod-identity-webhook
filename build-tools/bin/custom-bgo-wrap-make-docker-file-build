@@ -1,0 +1,5 @@
+#!/bin/sh
+set -x # echo commands executed
+set -e # fail script on any individual command failing
+
+bgo-wrap-make "$@" && docker-file-build "$@"
