@@ -13,11 +13,13 @@ package.AWSEKSPodIdentityWebhook = {
         network-access = blocked;
     };
 
-    build-system = bgo-wrap-make;
+    build-system = custom-bgo-wrap-make-docker-file-build;
     build-tools = {
         1.0 = {
             BrazilMakeGo = 2.0;
+            DockerFileBuild = 0.1;
             GoLang = 1.0;
+            SAMToolkit = 1.0;
         };
     };
 

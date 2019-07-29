@@ -1,0 +1,3 @@
+#!/bin/bash
+
+brazil-build-tool-exec sam $1
