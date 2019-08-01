@@ -4,4 +4,4 @@
 FROM AMAZON_LINUX
 
 # relative to your build directory
-COPY bin/amazon-eks-pod-identity-webhook /webhook
+COPY gopath/bin/linux_amd64/amazon-eks-pod-identity-webhook /webhook

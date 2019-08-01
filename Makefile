@@ -2,6 +2,16 @@
 -include build/private/bgo_exports.makefile
 include ${BGO_MAKEFILE}
 
+UNAME_S := $(shell uname -s)
+
+pre-release::
+ifeq ($(UNAME_S), Linux)
+	mkdir -p build/gopath/bin/linux_amd64
+	ln -f build/bin/amazon-eks-pod-identity-webhook build/gopath/bin/linux_amd64/amazon-eks-pod-identity-webhook
+else
+	GOBIN="" GOOS=linux GOARCH=amd64 go install -a $(GO_INSTALL_FLAGS) $V $T
+endif
+
 GO_INSTALL_FLAGS=-ldflags="-s -w"
 
 # Generic make
@@ -80,3 +90,5 @@ clean::
 	rm -rf ./certs/
 
 .PHONY: docker push build local-serve local-request cluster-up cluster-down prep-config deploy-config delete-config clean
+
+
