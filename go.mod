@@ -13,7 +13,6 @@ require (
 	github.com/json-iterator/go v1.1.6 // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0-rc1 // indirect
-	github.com/pkg/errors v0.8.0
 	github.com/prometheus/client_golang v0.9.3
 	github.com/spf13/pflag v1.0.3
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 // indirect
@@ -26,5 +25,5 @@ require (
 	k8s.io/kube-openapi v0.0.0-20190603182131-db7b694dc208 // indirect
 	k8s.io/kubernetes v1.14.3
 	k8s.io/utils v0.0.0-20190529001817-6999998975a7 // indirect
-	sigs.k8s.io/yaml v1.1.0
+	sigs.k8s.io/yaml v1.1.0 // indirect
 )
