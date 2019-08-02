@@ -2,17 +2,17 @@
 -include build/private/bgo_exports.makefile
 include ${BGO_MAKEFILE}
 
-UNAME_S := $(shell uname -s)
+export CGO_ENABLED=0
+export T=github.com/aws/amazon-eks-pod-identity-webhook
+UNAME_S = $(shell uname -s)
+GO_INSTALL_FLAGS = -ldflags="-s -w"
 
-pre-release::
-ifeq ($(UNAME_S), Linux)
-	mkdir -p build/gopath/bin/linux_amd64
-	ln -f build/bin/amazon-eks-pod-identity-webhook build/gopath/bin/linux_amd64/amazon-eks-pod-identity-webhook
-else
-	GOBIN="" GOOS=linux GOARCH=amd64 go install -a $(GO_INSTALL_FLAGS) $V $T
+install:: build
+ifeq ($(UNAME_S), Darwin)
+	GOOS=darwin GOARCH=amd64 go build -o build/gopath/bin/darwin_amd64/amazon-eks-pod-identity-webhook $(GO_INSTALL_FLAGS) $V $T
 endif
+	GOOS=linux GOARCH=amd64 go build -o build/gopath/bin/linux_amd64/amazon-eks-pod-identity-webhook $(GO_INSTALL_FLAGS) $V $T
 
-GO_INSTALL_FLAGS=-ldflags="-s -w"
 
 # Generic make
 REGISTRY_ID?=602401143452
