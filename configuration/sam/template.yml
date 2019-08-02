@@ -20,7 +20,7 @@ Resources:
     Type: AWS::ECS::TaskDefinition
     Properties:
       ContainerDefinitions:
-        - Name: "AWSWesleyClusterEventWatcher"
+        - Name: "AWSEKSPodIdentityWebhook"
           Image: !Sub "${PipelinesControlledEcrRepository}@${ImageDigest}"
           Cpu: 10
           Memory: 500
