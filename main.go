@@ -38,6 +38,7 @@ var webhookVersion = "v0.1.0"
 
 func main() {
 	port := flag.Int("port", 443, "Port to listen on")
+	metricsPort := flag.Int("metrics-port", 9999, "Port to listen on for metrics and healthz (http)")
 
 	// TODO Group in help text in-cluster/out-of-cluster/business logic flags
 	// out-of-cluster kubeconfig / TLS options
@@ -95,18 +96,20 @@ func main() {
 		handler.WithMountPath(*mountPath),
 	)
 
-	hostPort := fmt.Sprintf(":%d", *port)
+	addr := fmt.Sprintf(":%d", *port)
+	metricsAddr := fmt.Sprintf(":%d", *metricsPort)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mutate", mod.Handle)
 
 	baseHandler := handler.Apply(mux, handler.InstrumentRoute())
+	mux.Handle("/", baseHandler)
 
-	internalMux := http.NewServeMux()
-	internalMux.Handle("/metrics", promhttp.Handler())
-	internalMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "ok")
 	})
-	internalMux.Handle("/", baseHandler)
+
 
 	tlsConfig := &tls.Config{}
 
@@ -155,14 +158,26 @@ func main() {
 
 	klog.Info("Creating server")
 	server := &http.Server{
-		Addr:      hostPort,
-		Handler:   internalMux,
+		Addr:      addr,
+		Handler:   mux,
 		TLSConfig: tlsConfig,
 	}
 	handler.ShutdownOnTerm(server, time.Duration(10)*time.Second)
 
-	klog.Infof("Listening on %s", hostPort)
-	if err := server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+	metricsServer := &http.Server{
+		Addr:      metricsAddr,
+		Handler:   metricsMux,
+	}
+
+	go func() {
+		klog.Infof("Listening on %s", addr)
+		if err := server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+			klog.Fatalf("Error listening: %q", err)
+		}
+	}()
+
+	klog.Infof("Listening on %s for metrics and healthz", metricsAddr)
+	if err := metricsServer.ListenAndServe(); err != http.ErrServerClosed {
 		klog.Fatalf("Error listening: %q", err)
 	}
 	klog.Info("Graceflully closed")
