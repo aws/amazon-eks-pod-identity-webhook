@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: iam-for-pods
-  namespace: eks
+  name: pod-identity-webhook
+  namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: iam-for-pods
-  namespace: eks
+  name: pod-identity-webhook
+  namespace: default
 rules:
 - apiGroups:
   - ""
@@ -25,26 +25,26 @@ rules:
   - update
   - patch
   resourceNames:
-  - "iam-for-pods"
+  - "pod-identity-webhook"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: iam-for-pods
-  namespace: eks
+  name: pod-identity-webhook
+  namespace: default
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: iam-for-pods
+  name: pod-identity-webhook
 subjects:
 - kind: ServiceAccount
-  name: iam-for-pods
-  namespace: eks
+  name: pod-identity-webhook
+  namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: iam-for-pods
+  name: pod-identity-webhook
 rules:
 - apiGroups:
   - ""
@@ -52,6 +52,8 @@ rules:
   - serviceaccounts
   verbs:
   - get
+  - watch
+  - list
 - apiGroups:
   - certificates.k8s.io
   resources:
@@ -65,12 +67,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: iam-for-pods
+  name: pod-identity-webhook
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: iam-for-pods
+  name: pod-identity-webhook
 subjects:
 - kind: ServiceAccount
-  name: iam-for-pods
-  namespace: eks
+  name: pod-identity-webhook
+  namespace: default

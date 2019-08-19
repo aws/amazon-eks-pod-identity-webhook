@@ -16,7 +16,7 @@ endif
 
 # Generic make
 REGISTRY_ID?=602401143452
-IMAGE_NAME?=eks/iam-for-pods
+IMAGE_NAME?=eks/pod-identity-webhook
 REGION?=us-west-2
 IMAGE?=$(REGISTRY_ID).dkr.ecr.$(REGION).amazonaws.com/$(IMAGE_NAME)
 
@@ -76,7 +76,7 @@ deploy-config: prep-config
 	kubectl apply -f deploy/service.yaml
 	kubectl apply -f deploy/mutatingwebhook-ca-bundle.yaml
 	sleep 1
-	kubectl certificate approve $$(kubectl get csr -o jsonpath='{.items[?(@.spec.username=="system:serviceaccount:eks:iam-for-pods")].metadata.name}') \
+	kubectl certificate approve $$(kubectl get csr -o jsonpath='{.items[?(@.spec.username=="system:serviceaccount:default:pod-identity-webhook")].metadata.name}')
 
 delete-config:
 	@echo 'Tearing down mutating controller and associated resources...'

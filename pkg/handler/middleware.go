@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/klog"
 )
 
 var (
@@ -118,6 +119,33 @@ func InstrumentRoute() Middleware {
 			}()
 			h.ServeHTTP(wrappedWriter, r)
 
+		})
+	}
+}
+
+func Logging() Middleware {
+	return func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			wrappedWriter := &statusLoggingResponseWriter{w, http.StatusOK, 0}
+
+			defer func() {
+				klog.V(4).Infof("path=%s method=%s status=%d user_agent=%s body_bytes=%d",
+					r.URL.Path,
+					r.Method,
+					wrappedWriter.status,
+					r.Header.Get("User-Agent"),
+					wrappedWriter.bodyBytes,
+				)
+			}()
+
+			err := r.ParseForm()
+			if err != nil {
+				klog.Errorf("Error parsing form: %v", err)
+				http.Error(w, `{"error": "error parsing form"}`, http.StatusBadRequest)
+				return
+			}
+
+			h.ServeHTTP(wrappedWriter, r)
 		})
 	}
 }

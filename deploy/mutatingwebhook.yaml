@@ -1,14 +1,15 @@
 apiVersion: admissionregistration.k8s.io/v1beta1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: iam-for-pods
-  namespace: eks
+  name: pod-identity-webhook
+  namespace: default
 webhooks:
-- name: iam-for-pods.amazonaws.com
+- name: pod-identity-webhook.amazonaws.com
+  failurePolicy: Ignore
   clientConfig:
     service:
-      name: iam-for-pods
-      namespace: eks
+      name: pod-identity-webhook
+      namespace: default
       path: "/mutate"
     caBundle: ${CA_BUNDLE}
   rules:

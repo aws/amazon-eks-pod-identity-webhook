@@ -25,6 +25,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cert"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/handler"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -50,9 +51,9 @@ func main() {
 
 	// in-cluster TLS options
 	inCluster := flag.Bool("in-cluster", true, "Use in-cluster authentication and certificate request API")
-	serviceName := flag.String("service-name", "iam-for-pods", "(in-cluster) The service name fronting this webhook")
+	serviceName := flag.String("service-name", "pod-identity-webhook", "(in-cluster) The service name fronting this webhook")
 	namespaceName := flag.String("namespace", "eks", "(in-cluster) The namespace name this webhook and the tls secret resides in")
-	tlsSecret := flag.String("tls-secret", "iam-for-pods", "(in-cluster) The secret name for storing the TLS serving cert")
+	tlsSecret := flag.String("tls-secret", "pod-identity-webhook", "(in-cluster) The secret name for storing the TLS serving cert")
 
 	// annotation/volume configurations
 	annotationPrefix := flag.String("annotation-prefix", "eks.amazonaws.com", "The Service Account annotation to look for")
@@ -82,24 +83,36 @@ func main() {
 		klog.Fatalf("Error creating config: %v", err.Error())
 	}
 
+	config.QPS = 50
+	config.Burst = 50
+
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		klog.Fatalf("Error creating clientset: %v", err.Error())
 	}
 
+	saCache := cache.New(
+		*audience,
+		*annotationPrefix,
+		clientset,
+	)
+	saCache.Start()
+
 	mod := handler.NewModifier(
 		handler.WithExpiration(*tokenExpiration),
-		handler.WithAnnotationPrefix(*annotationPrefix),
-		handler.WithClientset(clientset),
-		handler.WithAudience(*audience),
 		handler.WithMountPath(*mountPath),
+		handler.WithServiceAccountCache(saCache),
 	)
 
 	hostPort := fmt.Sprintf(":%d", *port)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mutate", mod.Handle)
 
-	baseHandler := handler.Apply(mux, handler.InstrumentRoute())
+	baseHandler := handler.Apply(
+		mux,
+		handler.InstrumentRoute(),
+		handler.Logging(),
+	)
 
 	internalMux := http.NewServeMux()
 	internalMux.Handle("/metrics", promhttp.Handler())
@@ -114,14 +127,15 @@ func main() {
 		csr := &x509.CertificateRequest{
 			Subject: pkix.Name{CommonName: fmt.Sprintf("%s.%s.svc", *serviceName, *namespaceName)},
 			/*
-				// TODO: EKS Signer only allows SANS for ec2-approved domains
+				// TODO: EKS Signer only allows SANS for ec2-approved domains, once this is fixed
+				// add additional domains and IPs
 				DNSNames: []string{
 					fmt.Sprintf("%s", *serviceName),
 					fmt.Sprintf("%s.%s", *serviceName, *namespaceName),
 					fmt.Sprintf("%s.%s.svc", *serviceName, *namespaceName),
 					fmt.Sprintf("%s.%s.svc.cluster.local", *serviceName, *namespaceName),
 				},
-				// TODO: SANIPs for service IP
+				// TODO: SANIPs for service IP, but not pod IP
 				//IPAddresses: nil,
 			*/
 		}
