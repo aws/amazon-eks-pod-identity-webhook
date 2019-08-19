@@ -16,16 +16,16 @@
 package handler
 
 import (
-	//"encoding/json"
+	"encoding/json"
 	"reflect"
 	"testing"
 
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
 	"k8s.io/api/admission/v1beta1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	fakeclientset "k8s.io/client-go/kubernetes/fake"
 )
 
 var rawPod = []byte(`
@@ -97,19 +97,19 @@ func TestSecretStore(t *testing.T) {
 	}{
 		{
 			"nilBody",
-			NewModifier(WithClientset(fakeclientset.NewSimpleClientset(testServiceAccount))),
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
 			nil,
 			&v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "bad content"}},
 		},
 		{
 			"NoRequest",
-			NewModifier(WithClientset(fakeclientset.NewSimpleClientset(testServiceAccount))),
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
 			&v1beta1.AdmissionReview{Request: nil},
 			&v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "bad content"}},
 		},
 		{
 			"ValidRequestSuccess",
-			NewModifier(WithClientset(fakeclientset.NewSimpleClientset(testServiceAccount))),
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
 			validReview,
 			validResponse,
 		},
@@ -120,7 +120,9 @@ func TestSecretStore(t *testing.T) {
 			response := c.modifier.MutatePod(c.input)
 
 			if !reflect.DeepEqual(response, c.response) {
-				t.Errorf("Unexpected response. Got \n%#v\n wanted \n%#v", response, c.response)
+				got, _ := json.MarshalIndent(response, "", "  ")
+				want, _ := json.MarshalIndent(c.response, "", "  ")
+				t.Errorf("Unexpected response. Got \n%s\n wanted \n%s", string(got), string(want))
 			}
 
 		})

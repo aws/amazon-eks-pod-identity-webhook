@@ -101,13 +101,13 @@ Usage of amazon-eks-pod-identity-webhook:
       --logtostderr                      log to standard error instead of files (default true)
       --namespace string                 (in-cluster) The namespace name this webhook and the tls secret resides in (default "eks")
       --port int                         Port to listen on (default 443)
-      --service-name string              (in-cluster) The service name fronting this webhook (default "iam-for-pods")
+      --service-name string              (in-cluster) The service name fronting this webhook (default "pod-identity-webhook")
       --skip_headers                     If true, avoid header prefixes in the log messages
       --skip_log_headers                 If true, avoid headers when openning log files
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
       --tls-cert string                  (out-of-cluster) TLS certificate file path (default "/etc/webhook/certs/tls.cert")
       --tls-key string                   (out-of-cluster) TLS key file path (default "/etc/webhook/certs/tls.key")
-      --tls-secret string                (in-cluster) The secret name for storing the TLS serving cert (default "iam-for-pods")
+      --tls-secret string                (in-cluster) The secret name for storing the TLS serving cert (default "pod-identity-webhook")
       --token-audience string            The default audience for tokens. Can be overridden by annotation (default "sts.amazonaws.com")
       --token-expiration int             The token expiration (default 86400)
       --token-mount-path string          The path to mount tokens (default "/var/run/secrets/eks.amazonaws.com/serviceaccount")

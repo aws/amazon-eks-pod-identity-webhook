@@ -22,13 +22,13 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
 	"k8s.io/api/admission/v1beta1"
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/apis/core/v1"
 )
@@ -48,19 +48,9 @@ var (
 // ModifierOpt is an option type for setting up a Modifier
 type ModifierOpt func(*Modifier)
 
-// WithAnnotationPrefix sets the modifier annotation prefix
-func WithAnnotationPrefix(prefix string) ModifierOpt {
-	return func(m *Modifier) { m.AnnotationPrefix = prefix }
-}
-
-// WithClientset sets the modifier clientset
-func WithClientset(clientset kubernetes.Interface) ModifierOpt {
-	return func(m *Modifier) { m.Clientset = clientset }
-}
-
-// WithAudience sets the modifier audience
-func WithAudience(audience string) ModifierOpt {
-	return func(m *Modifier) { m.Audience = audience }
+// WithServiceAccountCache sets the modifiers cache
+func WithServiceAccountCache(c cache.ServiceAccountCache) ModifierOpt {
+	return func(m *Modifier) { m.Cache = c }
 }
 
 // WithMountPath sets the modifier mountPath
@@ -75,67 +65,27 @@ func WithExpiration(exp int64) ModifierOpt {
 
 // NewModifier returns a Modifier with default values
 func NewModifier(opts ...ModifierOpt) *Modifier {
-	mod := &Modifier{
-		AnnotationPrefix: "eks.amazonaws.com",
-		Audience:         "sts.amazonaws.com",
-		MountPath:        "/var/run/secrets/eks.amazonaws.com/serviceaccount",
-		Expiration:       86400,
 
-		volName:   "aws-iam-token",
-		tokenName: "token",
+	mod := &Modifier{
+		MountPath:  "/var/run/secrets/eks.amazonaws.com/serviceaccount",
+		Expiration: 86400,
+		volName:    "aws-iam-token",
+		tokenName:  "token",
 	}
 	for _, opt := range opts {
 		opt(mod)
 	}
+
 	return mod
 }
 
 // Modifier holds configuration values for pod modifications
 type Modifier struct {
-	AnnotationPrefix string
-	Audience         string
-	Expiration       int64
-	MountPath        string
-	Clientset        kubernetes.Interface
-
-	volName   string
-	tokenName string
-}
-
-func (m *Modifier) getAudience(pod *corev1.Pod) string {
-	if pod.Spec.ServiceAccountName == "" {
-		return m.Audience
-	}
-	sa, err := m.Clientset.CoreV1().ServiceAccounts(pod.Namespace).Get(
-		pod.Spec.ServiceAccountName,
-		metav1.GetOptions{},
-	)
-	if err != nil {
-		klog.Errorf("Error fetching service accounts: %v", err.Error())
-		return m.Audience
-	}
-
-	if value, ok := sa.Annotations[m.AnnotationPrefix+"/audience"]; ok {
-		return value
-	}
-	return m.Audience
-}
-
-func (m *Modifier) getRole(pod *corev1.Pod) string {
-	if pod.Spec.ServiceAccountName == "" {
-		return ""
-	}
-	sa, err := m.Clientset.CoreV1().ServiceAccounts(pod.Namespace).Get(
-		pod.Spec.ServiceAccountName,
-		metav1.GetOptions{},
-	)
-	if err != nil {
-		klog.Errorf("Error fetching service accounts: %v", err.Error())
-		return ""
-	}
-
-	value, _ := sa.Annotations[m.AnnotationPrefix+"/role-arn"]
-	return value
+	Expiration int64
+	MountPath  string
+	Cache      cache.ServiceAccountCache
+	volName    string
+	tokenName  string
 }
 
 type patchOperation struct {
@@ -269,9 +219,8 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 
 	pod.Namespace = req.Namespace
 
-	audience := m.getAudience(&pod)
+	podRole, audience := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
 
-	podRole := m.getRole(&pod)
 	// determine whether to perform mutation
 	if podRole == "" {
 		return &v1beta1.AdmissionResponse{
@@ -281,6 +230,7 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 
 	patchBytes, err := json.Marshal(m.updatePodSpec(&pod, podRole, audience))
 	if err != nil {
+		klog.Errorf("Error marshaling pod update: %v", err.Error())
 		return &v1beta1.AdmissionResponse{
 			Result: &metav1.Status{
 				Message: err.Error(),

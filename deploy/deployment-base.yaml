@@ -1,29 +1,29 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: iam-for-pods
-  namespace: eks
+  name: pod-identity-webhook
+  namespace: default
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: iam-for-pods
+      app: pod-identity-webhook
   template:
     metadata:
       labels:
-        app: iam-for-pods
+        app: pod-identity-webhook
     spec:
-      serviceAccountName: iam-for-pods
+      serviceAccountName: pod-identity-webhook
       containers:
-      - name: iam-for-pods
+      - name: pod-identity-webhook
         image: IMAGE
         imagePullPolicy: Always
         command:
         - /webhook
         - --in-cluster
-        - --namespace=eks
-        - --service-name=iam-for-pods
-        - --tls-secret=iam-for-pods
+        - --namespace=default
+        - --service-name=pod-identity-webhook
+        - --tls-secret=pod-identity-webhook
         - --annotation-prefix=eks.amazonaws.com
         - --token-audience=sts.amazonaws.com
         - --logtostderr
