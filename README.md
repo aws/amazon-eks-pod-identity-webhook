@@ -23,13 +23,11 @@ This webhook is for mutating pods that will require AWS IAM access.
        },
        "Action": "sts:AssumeRoleWithWebIdentity",
        "Condition": {
+        "__doc_comment": "scope the role to the service account (optional)",
         "StringEquals": {
-         # scope the role to your cluster [required]
-         "oidc.us-west-2.eks.amazonaws.com/624a142e-43fc-4a4e-9a65-0adbfe9d6a85:aud": "sts.amazonaws.com",
-         # scope the role to the service account (optional)
          "oidc.us-west-2.eks.amazonaws.com/624a142e-43fc-4a4e-9a65-0adbfe9d6a85:sub": "system:serviceaccount:default:my-serviceaccount"
         },
-        # Optional for scoping to a namespace
+        "__doc_comment": "scope the role to a namespace (optional)",
         "StringLike": {
          "oidc.us-west-2.eks.amazonaws.com/624a142e-43fc-4a4e-9a65-0adbfe9d6a85:sub": "system:serviceaccount:default:*"
         }
