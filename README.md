@@ -129,6 +129,8 @@ This will:
 * Create the deployment, service, and mutating webhook in the cluster
 * Approve the CSR that the deployment created for its TLS serving certificate
 
+For self-hosted API server configuration, see see [SELF_HOSTED_SETUP.md](/SELF_HOSTED_SETUP.md)
+
 ### On API server
 TODO
 
