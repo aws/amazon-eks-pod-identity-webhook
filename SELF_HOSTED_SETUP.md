@@ -54,8 +54,6 @@ Part of the OIDC spec is to host an OIDC discovery and a keys JSON document.
 Lets create these:
 
 ```bash
-# Get the sha of the public key and use it as the key id
-KID=$(sha1sum $PUB_KEY | awk '{print $1}')
 cat <<EOF > discovery.json
 {
     "issuer": "https://$ISSUER_HOSTPATH/",
@@ -81,7 +79,7 @@ EOF
 Included in this repo is a small go file to help create the keys json document.
 
 ```bash
-go run ./hack/self-hosted/main.go -key $PKCS_KEY -kid $KID > keys.json
+go run ./hack/self-hosted/main.go -key $PKCS_KEY > keys.json
 ```
 
 After you have the `keys.json` and `discovery.json` files, you'll need to place
