@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"flag"
@@ -14,11 +16,27 @@ import (
 	jose "gopkg.in/square/go-jose.v2"
 )
 
+// copied from kubernetes/kubernetes#78502
+func keyIDFromPublicKey(publicKey interface{}) (string, error) {
+	publicKeyDERBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize public key to DER format: %v", err)
+	}
+
+	hasher := crypto.SHA256.New()
+	hasher.Write(publicKeyDERBytes)
+	publicKeyDERHash := hasher.Sum(nil)
+
+	keyID := base64.RawURLEncoding.EncodeToString(publicKeyDERHash)
+
+	return keyID, nil
+}
+
 type KeyResponse struct {
 	Keys []jose.JSONWebKey `json:"keys"`
 }
 
-func readKey(keyID, filename string) ([]byte, error) {
+func readKey(filename string) ([]byte, error) {
 	var response []byte
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
@@ -48,10 +66,15 @@ func readKey(keyID, filename string) ([]byte, error) {
 		return response, fmt.Errorf("invalid public key type %T, must be *rsa.PrivateKey", pubKey)
 	}
 
+	kid, err := keyIDFromPublicKey(pubKey)
+	if err != nil {
+		return response, err
+	}
+
 	var keys []jose.JSONWebKey
 	keys = append(keys, jose.JSONWebKey{
 		Key:       pubKey,
-		KeyID:     keyID,
+		KeyID:     kid,
 		Algorithm: string(alg),
 		Use:       "sig",
 	})
@@ -61,11 +84,10 @@ func readKey(keyID, filename string) ([]byte, error) {
 }
 
 func main() {
-	kid := flag.String("kid", "", "The Key ID")
 	keyFile := flag.String("key", "", "The public key input file in PKCS8 format")
 	flag.Parse()
 
-	output, err := readKey(*kid, *keyFile)
+	output, err := readKey(*keyFile)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
