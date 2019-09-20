@@ -79,8 +79,16 @@ EOF
 Included in this repo is a small go file to help create the keys json document.
 
 ```bash
-go run ./hack/self-hosted/main.go -key $PKCS_KEY > keys.json
+go run ./hack/self-hosted/main.go -key $PKCS_KEY  | jq '.keys += [.keys[0]] | .keys[1].kid = ""' > keys.json
 ```
+
+**note:** This will print the same key twice, once with an empty `kid` and once
+populated. Prior to Kubernetes 1.16 (PR [#78502](https://github.com/kubernetes/kubernetes/pull/78502))
+the API server did not add a `kid` value to projected tokens. In 1.16+, the
+`kid` is included. By printing the key twice, you can safely upgrade a cluster
+to 1.16. Graceful signing key rotation is not possible prior to 1.16 since
+tokens were always signed with the same empty `kid` value, even if they used
+different public keys.
 
 After you have the `keys.json` and `discovery.json` files, you'll need to place
 them in your bucket. It is critical these objects are public so STS can access
@@ -102,7 +110,7 @@ In order to use this feature, you'll need to set the following
 ```
 # This flag is likely already specified for legacy service accounts, you can
 # specify this flag multiple times, and you'll need to add this with the path
-# to the $PUB_KEY file from the beginning
+# to the $PKCS_KEY file from the beginning
 --service-account-key-file
 
 # Path to the signing (private) key ($PRIV_KEY)
