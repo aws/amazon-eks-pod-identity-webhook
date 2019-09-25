@@ -55,7 +55,7 @@ This webhook is for mutating pods that will require AWS IAM access.
     kind: Pod
     metadata:
       name: my-pod
-      namespace: defaut
+      namespace: default
     spec:
       serviceAccountName: my-serviceaccount
       containers:
