@@ -108,14 +108,13 @@ func main() {
 	addr := fmt.Sprintf(":%d", *port)
 	metricsAddr := fmt.Sprintf(":%d", *metricsPort)
 	mux := http.NewServeMux()
-	mux.HandleFunc("/mutate", mod.Handle)
 
 	baseHandler := handler.Apply(
-		mux,
+		http.HandlerFunc(mod.Handle),
 		handler.InstrumentRoute(),
 		handler.Logging(),
 	)
-	mux.Handle("/", baseHandler)
+	mux.Handle("/mutate", baseHandler)
 
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.Handler())
