@@ -154,33 +154,49 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []p
 		containers = append(containers, container)
 	}
 
-	patch := []patchOperation{
-		patchOperation{
-			Op:   "add",
-			Path: "/spec/volumes/0",
-			Value: corev1.Volume{
-				m.volName,
-				corev1.VolumeSource{
-					Projected: &corev1.ProjectedVolumeSource{
-						Sources: []corev1.VolumeProjection{
-							corev1.VolumeProjection{
-								ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-									Audience:          audience,
-									ExpirationSeconds: &m.Expiration,
-									Path:              m.tokenName,
-								},
-							},
+	volume := corev1.Volume{
+		m.volName,
+		corev1.VolumeSource{
+			Projected: &corev1.ProjectedVolumeSource{
+				Sources: []corev1.VolumeProjection{
+					corev1.VolumeProjection{
+						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+							Audience:          audience,
+							ExpirationSeconds: &m.Expiration,
+							Path:              m.tokenName,
 						},
 					},
 				},
 			},
 		},
+	}
+
+	patch := []patchOperation{
 		patchOperation{
 			Op:    "add",
-			Path:  "/spec/containers",
-			Value: containers,
+			Path:  "/spec/volumes/0",
+			Value: volume,
 		},
 	}
+
+	if pod.Spec.Volumes == nil {
+		patch = []patchOperation{
+			patchOperation{
+				Op:   "add",
+				Path: "/spec/volumes",
+				Value: []corev1.Volume{
+					volume,
+				},
+			},
+		}
+	}
+
+	patch = append(patch, patchOperation{
+		Op:    "add",
+		Path:  "/spec/containers",
+		Value: containers,
+	})
+
 	if len(initContainers) > 0 {
 		patch = append(patch, patchOperation{
 			Op:    "add",
