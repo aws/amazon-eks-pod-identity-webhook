@@ -7,7 +7,7 @@ This webhook is for mutating pods that will require AWS IAM access.
 1. [Create an OIDC provider][1] in IAM for your cluster. You can find the OIDC
    discovery endpoint by describing your EKS cluster.
     ```bash
-    aws eks describe-cluster --name $CLUSTER_NAME --query cluster.tokenDiscoveryEndpoint
+    aws eks describe-cluster --name $CLUSTER_NAME --query cluster.identity.oidc
     ```
     And enter "sts.amazonaws.com" as the client-id
 2. Create an IAM role for your pods and [modify the trust policy][2] to allow
