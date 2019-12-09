@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/apis/core/v1"
+	v1 "k8s.io/kubernetes/pkg/apis/core/v1"
 )
 
 func init() {
@@ -94,9 +94,8 @@ type patchOperation struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
-func addEnvToContainer(container *corev1.Container, mountPath, tokenName, volName, roleName string) {
+func addEnvToContainer(container *corev1.Container, mountPath, tokenName, volName string) {
 	reservedKeys := map[string]string{
-		"AWS_ROLE_ARN":                "",
 		"AWS_WEB_IDENTITY_TOKEN_FILE": "",
 	}
 	for _, env := range container.Env {
@@ -115,10 +114,6 @@ func addEnvToContainer(container *corev1.Container, mountPath, tokenName, volNam
 
 	env := container.Env
 	env = append(env, corev1.EnvVar{
-		Name:  "AWS_ROLE_ARN",
-		Value: roleName,
-	})
-	env = append(env, corev1.EnvVar{
 		Name:  "AWS_WEB_IDENTITY_TOKEN_FILE",
 		Value: filepath.Join(mountPath, tokenName),
 	})
@@ -133,7 +128,7 @@ func addEnvToContainer(container *corev1.Container, mountPath, tokenName, volNam
 	)
 }
 
-func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []patchOperation {
+func (m *Modifier) updatePodSpec(pod *corev1.Pod, audience string) []patchOperation {
 	// return early if volume already exists
 	for _, vol := range pod.Spec.Volumes {
 		if vol.Name == m.volName {
@@ -144,13 +139,13 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []p
 	var initContainers = []corev1.Container{}
 	for i := range pod.Spec.InitContainers {
 		container := pod.Spec.InitContainers[i]
-		addEnvToContainer(&container, m.MountPath, m.tokenName, m.volName, roleName)
+		addEnvToContainer(&container, m.MountPath, m.tokenName, m.volName)
 		initContainers = append(initContainers, container)
 	}
 	var containers = []corev1.Container{}
 	for i := range pod.Spec.Containers {
 		container := pod.Spec.Containers[i]
-		addEnvToContainer(&container, m.MountPath, m.tokenName, m.volName, roleName)
+		addEnvToContainer(&container, m.MountPath, m.tokenName, m.volName)
 		containers = append(containers, container)
 	}
 
@@ -233,18 +228,39 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 		}
 	}
 
-	pod.Namespace = req.Namespace
-
-	podRole, audience := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
-
-	// determine whether to perform mutation
-	if podRole == "" {
-		return &v1beta1.AdmissionResponse{
-			Allowed: true,
+	// Check for AWS_ROLE_ARN, mutate if any container has this env variable
+	/*toMutate := false
+	fmt.Printf("checking Initcontainers")
+	for _, c := range pod.Spec.InitContainers {
+		if checkEnv(c) {
+			fmt.Printf("checking Initcontainer found")
+			toMutate = true
+			break
+		}
+	}
+	if !toMutate {
+		fmt.Printf("checking Containers")
+		for _, c := range pod.Spec.Containers {
+			if checkEnv(c) {
+				fmt.Printf("checking Container found")
+				toMutate = true
+				break
+			}
 		}
 	}
 
-	patchBytes, err := json.Marshal(m.updatePodSpec(&pod, podRole, audience))
+	fmt.Sprintf("Mutate response %v", toMutate)
+	if !toMutate {
+		return &v1beta1.AdmissionResponse{
+			Allowed: true,
+		}
+	}*/
+
+	pod.Namespace = req.Namespace
+
+	audience := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
+
+	patchBytes, err := json.Marshal(m.updatePodSpec(&pod, audience))
 	if err != nil {
 		klog.Errorf("Error marshaling pod update: %v", err.Error())
 		return &v1beta1.AdmissionResponse{
@@ -262,6 +278,16 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 			return &pt
 		}(),
 	}
+}
+
+//check a container for AWS_ROLE_ARN
+func checkEnv(c corev1.Container) bool {
+	for _, e := range c.Env {
+		if e.Name == "AWS_ROLE_ARN" {
+			return true
+		}
+	}
+	return false
 }
 
 // Handle handles pod modification requests

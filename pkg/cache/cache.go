@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
@@ -28,13 +28,12 @@ import (
 )
 
 type CacheResponse struct {
-	RoleARN  string
 	Audience string
 }
 
 type ServiceAccountCache interface {
 	Start()
-	Get(name, namespace string) (role, aud string)
+	Get(name, namespace string) (aud string)
 }
 
 type serviceAccountCache struct {
@@ -47,13 +46,13 @@ type serviceAccountCache struct {
 	defaultAudience  string
 }
 
-func (c *serviceAccountCache) Get(name, namespace string) (role, aud string) {
+func (c *serviceAccountCache) Get(name, namespace string) (aud string) {
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	resp := c.get(name, namespace)
 	if resp == nil {
-		return "", ""
+		return ""
 	}
-	return resp.RoleARN, resp.Audience
+	return resp.Audience
 }
 
 func (c *serviceAccountCache) get(name, namespace string) *CacheResponse {
@@ -74,15 +73,11 @@ func (c *serviceAccountCache) pop(name, namespace string) {
 }
 
 func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
-	arn, ok := sa.Annotations[c.annotationPrefix+"/role-arn"]
 	resp := &CacheResponse{}
-	if ok {
-		resp.RoleARN = arn
-		if audience, ok := sa.Annotations[c.annotationPrefix+"/audience"]; ok {
-			resp.Audience = audience
-		} else {
-			resp.Audience = c.defaultAudience
-		}
+	if audience, ok := sa.Annotations[c.annotationPrefix+"/audience"]; ok {
+		resp.Audience = audience
+	} else {
+		resp.Audience = c.defaultAudience
 	}
 	klog.V(5).Infof("Adding sa %s/%s to cache", sa.Name, sa.Namespace)
 	c.set(sa.Name, sa.Namespace, resp)
