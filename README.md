@@ -36,19 +36,10 @@ This webhook is for mutating pods that will require AWS IAM access.
      ]
     }
     ```
-3. Modify your pod's service account to be annotated with the ARN of the role
-   you want the pod to use
-    ```yaml
-    apiVersion: v1
-    kind: ServiceAccount
-    metadata:
-      name: my-serviceaccount
-      namespace: default
-      annotations:
-        eks.amazonaws.com/role-arn: "arn:aws:iam::111122223333:role/s3-reader"
-    ```
-4. All new pod pods launched using this Service Account will be modified to use
-   IAM for pods. Below is an example pod spec with the environment variables and
+3. All new pods launched with an **AWS_ROLE_ARN** env variable will be modified to use
+   IAM for pods using the service account attached to the pod.
+   
+   Below is an example pod spec with the environment variables and
    volume fields added by the webhook.
     ```yaml
     apiVersion: v1
@@ -61,10 +52,10 @@ This webhook is for mutating pods that will require AWS IAM access.
       containers:
       - name: container-name
         image: container-image:version
-    ### Everything below is added by the webhook ###
         env:
         - name: AWS_ROLE_ARN
           value: "arn:aws:iam::111122223333:role/s3-reader"
+    ### Everything below is added by the webhook ###
         - name: AWS_WEB_IDENTITY_TOKEN_FILE
           value: "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
         volumeMounts:
