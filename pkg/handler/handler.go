@@ -228,33 +228,26 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 		}
 	}
 
-	// Check for AWS_ROLE_ARN, mutate if any container has this env variable
-	/*toMutate := false
-	fmt.Printf("checking Initcontainers")
+	toMutate := false
 	for _, c := range pod.Spec.InitContainers {
 		if checkEnv(c) {
-			fmt.Printf("checking Initcontainer found")
 			toMutate = true
 			break
 		}
 	}
 	if !toMutate {
-		fmt.Printf("checking Containers")
 		for _, c := range pod.Spec.Containers {
 			if checkEnv(c) {
-				fmt.Printf("checking Container found")
 				toMutate = true
 				break
 			}
 		}
 	}
-
-	fmt.Sprintf("Mutate response %v", toMutate)
 	if !toMutate {
 		return &v1beta1.AdmissionResponse{
 			Allowed: true,
 		}
-	}*/
+	}
 
 	pod.Namespace = req.Namespace
 

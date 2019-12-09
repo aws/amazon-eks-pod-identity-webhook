@@ -16,14 +16,13 @@
 package handler
 
 import (
-	"encoding/json"
 	"reflect"
 	"testing"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
 	"k8s.io/api/admission/v1beta1"
 	authenticationv1 "k8s.io/api/authentication/v1"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -40,7 +39,10 @@ var rawPodWithoutVolume = []byte(`
 	"containers": [
 	  {
 		"image": "amazonlinux",
-		"name": "balajilovesoreos"
+		"name": "balajilovesoreos",
+		"env": [
+			{"name" :"AWS_ROLE_ARN", "value": "arn:aws:iam::111122223333:role/s3-reader"}
+		]
 	  }
 	],
 	"serviceAccountName": "default"
@@ -60,7 +62,10 @@ var rawPodWithVolume = []byte(`
 	"containers": [
 	  {
 		"image": "amazonlinux",
-		"name": "balajilovesoreos"
+		"name": "balajilovesoreos",
+		"env": [
+			{"name" :"AWS_ROLE_ARN", "value": "arn:aws:iam::111122223333:role/s3-reader"}
+		]
 	  }
 	],
 	"serviceAccountName": "default",
@@ -126,9 +131,6 @@ func TestSecretStore(t *testing.T) {
 	testServiceAccount := &v1.ServiceAccount{}
 	testServiceAccount.Name = "default"
 	testServiceAccount.Namespace = "default"
-	testServiceAccount.Annotations = map[string]string{
-		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
-	}
 
 	cases := []struct {
 		caseName string
@@ -167,9 +169,7 @@ func TestSecretStore(t *testing.T) {
 			response := c.modifier.MutatePod(c.input)
 
 			if !reflect.DeepEqual(response, c.response) {
-				got, _ := json.MarshalIndent(response, "", "  ")
-				want, _ := json.MarshalIndent(c.response, "", "  ")
-				t.Errorf("Unexpected response. Got \n%s\n wanted \n%s", string(got), string(want))
+				t.Errorf("Unexpected response. Got \n%s\n wanted \n%s", string(response.Patch), string(c.response.Patch))
 			}
 
 		})
