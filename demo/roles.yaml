@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters: 
+  ClusterID: 
+    Type: String
+    Description: Enter your EKS OIDC Provider arn
+    MinLength: 32
+    MaxLength: 32
+    AllowedPattern: ^[a-zA-Z0-9]*$
+  Namespace: 
+    Type: String
+    Description: Enter the Namespace your pods belong to
+Resources:
+  EC2ReadRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        !Sub |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "arn:aws:iam::${AWS::AccountId}:oidc-provider/oidc.eks.${AWS::Region}.amazonaws.com/id/${ClusterID}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "oidc.eks.${AWS::Region}.amazonaws.com/id/${ClusterID}:sub":"system:serviceaccount:${Namespace}:default"
+                    }
+                  }
+                }
+               ]
+             }
+      Path: /
+      Policies:
+        - PolicyName: ec2describe
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'ec2:DescribeInstances'
+                Resource: '*'
+  S3ReadBuckets:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        !Sub |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Federated": "arn:aws:iam::${AWS::AccountId}:oidc-provider/oidc.eks.${AWS::Region}.amazonaws.com/id/${ClusterID}"
+                  },
+                  "Action": "sts:AssumeRoleWithWebIdentity",
+                  "Condition": {
+                    "StringEquals": {
+                      "oidc.eks.${AWS::Region}.amazonaws.com/id/${ClusterID}:sub":"system:serviceaccount:${Namespace}:default"
+                    }
+                  }
+                }
+               ]
+            }
+      Path: /
+      Policies:
+        - PolicyName: s3list
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:List*'
+                  - 's3:Get*'
+                Resource: '*'
+Outputs:
+  EC2RoleARN:
+    Value: !GetAtt EC2ReadRole.Arn
+  S3RoleARN:
+    Value: !GetAtt S3ReadBuckets.Arn

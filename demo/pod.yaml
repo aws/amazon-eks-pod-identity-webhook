@@ -1,0 +1,46 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+  namespace: test-iam
+  labels:
+    name: test-pod
+spec:
+  securityContext:
+    fsGroup: 1337
+  containers:
+    - name: s3
+      image: ubuntu
+      env:
+        - name: AWS_ROLE_ARN
+          value: #Put your S3 role here
+        - name: AWS_DEFAULT_REGION
+          value: eu-west-1
+      command: ["/bin/bash","-c"]
+      args:
+        - apt-get update;
+          apt-get install -y python3-pip;
+          pip3 install --upgrade --user awscli;
+          export PATH=$HOME/.local/bin:$PATH;
+          aws s3api list-buckets;
+          echo "The above command should return S3 buckets the below command should fail";
+          aws ec2 describe-instances;
+          exit
+    - name: ec2
+      image: ubuntu
+      env:
+        - name: AWS_ROLE_ARN
+          value: #Put your EC2 role here
+        - name: AWS_DEFAULT_REGION
+          value: eu-west-1
+      command: ["/bin/bash","-c"]
+      args:
+        - apt-get update;
+          apt-get install -y python3-pip;
+          pip3 install --upgrade --user awscli;
+          export PATH=$HOME/.local/bin:$PATH;
+          aws ec2 describe-instances;
+          echo "The above command should return EC2 instances the below command should fail";
+          aws s3api list-buckets;
+          exit
