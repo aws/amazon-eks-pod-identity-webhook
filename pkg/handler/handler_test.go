@@ -48,6 +48,54 @@ var rawPodWithoutVolume = []byte(`
 }
 `)
 
+var rawWindowsBetaPodWithoutVolume = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos"
+	  }
+	],
+	"serviceAccountName": "default",
+	"nodeSelector": {
+		"beta.kubernetes.io/arch": "amd64",
+		"beta.kubernetes.io/os": "windows"
+	}
+  }
+}
+`)
+
+var rawWindowsPodWithoutVolume = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos"
+	  }
+	],
+	"serviceAccountName": "default",
+	"nodeSelector": {
+		"kubernetes.io/arch": "amd64",
+		"kubernetes.io/os": "windows"
+	}
+  }
+}
+`)
+
 var rawPodWithVolume = []byte(`
 {
   "apiVersion": "v1",
@@ -73,11 +121,84 @@ var rawPodWithVolume = []byte(`
 }
 `)
 
-func getValidReview(isVolumePresent bool) *v1beta1.AdmissionReview {
-	pod := rawPodWithoutVolume
+var rawWindowsBetaPodWithVolume = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos"
+	  }
+	],
+	"serviceAccountName": "default",
+	"nodeSelector": {
+		"beta.kubernetes.io/arch": "amd64",
+		"beta.kubernetes.io/os": "windows"
+	},
+	"volumes": [
+	  {
+		"name": "my-volume"
+	  }
+	]
+  }
+}
+`)
 
-	if isVolumePresent {
-		pod = rawPodWithVolume
+var rawWindowsPodWithVolume = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos"
+	  }
+	],
+	"serviceAccountName": "default",
+	"nodeSelector": {
+		"kubernetes.io/arch": "amd64",
+		"kubernetes.io/os": "windows"
+	},
+	"volumes": [
+	  {
+		"name": "my-volume"
+	  }
+	]
+  }
+}
+`)
+
+func getValidReview(isVolumePresent bool, isWindows bool, betaNodeSelector bool) *v1beta1.AdmissionReview {
+	var pod []byte
+	if isWindows {
+		if betaNodeSelector {
+			pod = rawWindowsBetaPodWithoutVolume
+		} else {
+			pod = rawWindowsPodWithoutVolume
+		}
+		if isVolumePresent {
+			if betaNodeSelector {
+				pod = rawWindowsBetaPodWithVolume
+			} else {
+				pod = rawWindowsPodWithVolume
+			}
+		}
+	} else {
+		pod = rawPodWithoutVolume
+		if isVolumePresent {
+			pod = rawPodWithVolume
+		}
 	}
 
 	return &v1beta1.AdmissionReview{
@@ -106,6 +227,9 @@ func getValidReview(isVolumePresent bool) *v1beta1.AdmissionReview {
 var validPatchIfNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 var validPatchIfVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes/0","value":{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 
+var validPatchIfWindowsNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"C:\\var\\run\\secrets\\eks.amazonaws.com\\serviceaccount\\token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+var validPatchIfWindowsVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes/0","value":{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"C:\\var\\run\\secrets\\eks.amazonaws.com\\serviceaccount\\token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+
 var jsonPatchType = v1beta1.PatchType("JSONPatch")
 
 var validResponseIfNoVolumesPresent = &v1beta1.AdmissionResponse{
@@ -119,6 +243,20 @@ var validResponseIfVolumesPresent = &v1beta1.AdmissionResponse{
 	UID:       "",
 	Allowed:   true,
 	Patch:     validPatchIfVolumesPresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfWindowsNoVolumesPresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfWindowsNoVolumesPresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfWindowsVolumesPresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfWindowsVolumesPresent,
 	PatchType: &jsonPatchType,
 }
 
@@ -151,14 +289,38 @@ func TestSecretStore(t *testing.T) {
 		{
 			"ValidRequestSuccessWithoutVolumes",
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(false),
+			getValidReview(false, false, false),
 			validResponseIfNoVolumesPresent,
+		},
+		{
+			"ValidRequestSuccessWindowsWithoutVolumes",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
+			getValidReview(false, true, false),
+			validResponseIfWindowsNoVolumesPresent,
+		},
+		{
+			"ValidRequestSuccessWindowsBetaWithoutVolumes",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
+			getValidReview(false, true, true),
+			validResponseIfWindowsNoVolumesPresent,
 		},
 		{
 			"ValidRequestSuccessWithVolumes",
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(true),
+			getValidReview(true, false, false),
 			validResponseIfVolumesPresent,
+		},
+		{
+			"ValidRequestSuccessWindowsWithVolumes",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
+			getValidReview(true, true, false),
+			validResponseIfWindowsVolumesPresent,
+		},
+		{
+			"ValidRequestSuccessWindowsBetaWithVolumes",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
+			getValidReview(true, true, true),
+			validResponseIfWindowsVolumesPresent,
 		},
 	}
 
