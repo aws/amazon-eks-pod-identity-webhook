@@ -79,6 +79,23 @@ This webhook is for mutating pods that will require AWS IAM access.
               expirationSeconds: 86400
               path: token
     ```
+   
+### Usage with Windows container workloads
+
+To ensure workloads are scheduled on windows nodes have the right environment variables, they must have a `nodeSelector` targeting windows it must run on.  Workloads targeting windows nodes using `nodeAffinity` are currently not supported.
+```yaml
+  nodeSelector:
+    beta.kubernetes.io/os: windows
+```
+
+Or for Kubernetes 1.14+
+
+```yaml
+  nodeSelector:
+    kubernetes.io/os: windows
+```
+
+
 
 [1]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html
 [2]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-idp_oidc.html

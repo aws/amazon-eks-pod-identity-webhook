@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
 	"k8s.io/api/admission/v1beta1"
@@ -94,7 +95,7 @@ type patchOperation struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
-func addEnvToContainer(container *corev1.Container, mountPath, tokenName, volName, roleName string) {
+func addEnvToContainer(container *corev1.Container, mountPath, tokenFilePath, volName, roleName string) {
 	reservedKeys := map[string]string{
 		"AWS_ROLE_ARN":                "",
 		"AWS_WEB_IDENTITY_TOKEN_FILE": "",
@@ -118,9 +119,10 @@ func addEnvToContainer(container *corev1.Container, mountPath, tokenName, volNam
 		Name:  "AWS_ROLE_ARN",
 		Value: roleName,
 	})
+
 	env = append(env, corev1.EnvVar{
 		Name:  "AWS_WEB_IDENTITY_TOKEN_FILE",
-		Value: filepath.Join(mountPath, tokenName),
+		Value: tokenFilePath,
 	})
 	container.Env = env
 	container.VolumeMounts = append(
@@ -141,16 +143,27 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []p
 		}
 	}
 
+	tokenFilePath := filepath.Join(m.MountPath, m.tokenName)
+
+	betaNodeSelector, _ := pod.Spec.NodeSelector["beta.kubernetes.io/os"]
+	nodeSelector, _ := pod.Spec.NodeSelector["kubernetes.io/os"]
+	if (betaNodeSelector == "windows") || nodeSelector == "windows" {
+		// Convert the unix file path to a windows file path
+		// Eg. /var/run/secrets/eks.amazonaws.com/serviceaccount/token to
+		//     C:\var\run\secrets\eks.amazonaws.com\serviceaccount\token
+		tokenFilePath = "C:" + strings.Replace(tokenFilePath, `/`, `\`, -1)
+	}
+
 	var initContainers = []corev1.Container{}
 	for i := range pod.Spec.InitContainers {
 		container := pod.Spec.InitContainers[i]
-		addEnvToContainer(&container, m.MountPath, m.tokenName, m.volName, roleName)
+		addEnvToContainer(&container, m.MountPath, tokenFilePath, m.volName, roleName)
 		initContainers = append(initContainers, container)
 	}
 	var containers = []corev1.Container{}
 	for i := range pod.Spec.Containers {
 		container := pod.Spec.Containers[i]
-		addEnvToContainer(&container, m.MountPath, m.tokenName, m.volName, roleName)
+		addEnvToContainer(&container, m.MountPath, tokenFilePath, m.volName, roleName)
 		containers = append(containers, container)
 	}
 
