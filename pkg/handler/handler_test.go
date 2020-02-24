@@ -179,28 +179,7 @@ var rawWindowsPodWithVolume = []byte(`
 }
 `)
 
-func getValidReview(isVolumePresent bool, isWindows bool, betaNodeSelector bool) *v1beta1.AdmissionReview {
-	var pod []byte
-	if isWindows {
-		if betaNodeSelector {
-			pod = rawWindowsBetaPodWithoutVolume
-		} else {
-			pod = rawWindowsPodWithoutVolume
-		}
-		if isVolumePresent {
-			if betaNodeSelector {
-				pod = rawWindowsBetaPodWithVolume
-			} else {
-				pod = rawWindowsPodWithVolume
-			}
-		}
-	} else {
-		pod = rawPodWithoutVolume
-		if isVolumePresent {
-			pod = rawPodWithVolume
-		}
-	}
-
+func getValidReview(pod []byte) *v1beta1.AdmissionReview {
 	return &v1beta1.AdmissionReview{
 		Request: &v1beta1.AdmissionRequest{
 			UID: "918ef1dc-928f-4525-99ef-988389f263c3",
@@ -289,37 +268,37 @@ func TestSecretStore(t *testing.T) {
 		{
 			"ValidRequestSuccessWithoutVolumes",
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(false, false, false),
+			getValidReview(rawPodWithoutVolume),
 			validResponseIfNoVolumesPresent,
 		},
 		{
 			"ValidRequestSuccessWindowsWithoutVolumes",
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(false, true, false),
+			getValidReview(rawWindowsBetaPodWithoutVolume),
 			validResponseIfWindowsNoVolumesPresent,
 		},
 		{
 			"ValidRequestSuccessWindowsBetaWithoutVolumes",
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(false, true, true),
+			getValidReview(rawWindowsBetaPodWithoutVolume),
 			validResponseIfWindowsNoVolumesPresent,
 		},
 		{
 			"ValidRequestSuccessWithVolumes",
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(true, false, false),
+			getValidReview(rawPodWithVolume),
 			validResponseIfVolumesPresent,
 		},
 		{
 			"ValidRequestSuccessWindowsWithVolumes",
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(true, true, false),
+			getValidReview(rawWindowsPodWithVolume),
 			validResponseIfWindowsVolumesPresent,
 		},
 		{
 			"ValidRequestSuccessWindowsBetaWithVolumes",
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(true, true, true),
+			getValidReview(rawWindowsBetaPodWithVolume),
 			validResponseIfWindowsVolumesPresent,
 		},
 	}
