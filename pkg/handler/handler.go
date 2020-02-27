@@ -64,6 +64,11 @@ func WithExpiration(exp int64) ModifierOpt {
 	return func(m *Modifier) { m.Expiration = exp }
 }
 
+// WithRegion sets the modifier region
+func WithRegion(region string) ModifierOpt {
+	return func(m *Modifier) { m.Region = region }
+}
+
 // NewModifier returns a Modifier with default values
 func NewModifier(opts ...ModifierOpt) *Modifier {
 
@@ -84,6 +89,7 @@ func NewModifier(opts ...ModifierOpt) *Modifier {
 type Modifier struct {
 	Expiration int64
 	MountPath  string
+	Region     string
 	Cache      cache.ServiceAccountCache
 	volName    string
 	tokenName  string
@@ -95,7 +101,8 @@ type patchOperation struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
-func addEnvToContainer(container *corev1.Container, mountPath, tokenFilePath, volName, roleName string) {
+func addEnvToContainer(container *corev1.Container, mountPath, tokenFilePath, volName, roleName, region string) {
+	var skipReservedKeys, skipRegionKey bool
 	reservedKeys := map[string]string{
 		"AWS_ROLE_ARN":                "",
 		"AWS_WEB_IDENTITY_TOKEN_FILE": "",
@@ -103,27 +110,52 @@ func addEnvToContainer(container *corev1.Container, mountPath, tokenFilePath, vo
 	for _, env := range container.Env {
 		if _, ok := reservedKeys[env.Name]; ok {
 			// Skip if any env vars are already present
-			return
+			skipReservedKeys = true
 		}
 	}
 
 	for _, vol := range container.VolumeMounts {
 		if vol.Name == volName {
 			// Skip if volume is already present
-			return
+			skipReservedKeys = true
 		}
 	}
 
-	env := container.Env
-	env = append(env, corev1.EnvVar{
-		Name:  "AWS_ROLE_ARN",
-		Value: roleName,
-	})
+	awsRegionKeys := map[string]string{
+		"AWS_REGION":         "",
+		"AWS_DEFAULT_REGION": "",
+	}
+	for _, env := range container.Env {
+		if _, ok := awsRegionKeys[env.Name]; ok {
+			// Don't set AWS_DEFAULT_REGION if any awsRegionKeys is already set
+			skipRegionKey = true
+		}
+	}
 
-	env = append(env, corev1.EnvVar{
-		Name:  "AWS_WEB_IDENTITY_TOKEN_FILE",
-		Value: tokenFilePath,
-	})
+	if skipReservedKeys && skipRegionKey {
+		return
+	}
+
+	env := container.Env
+	if !skipRegionKey && region != "" {
+		env = append(env, corev1.EnvVar{
+			Name:  "AWS_DEFAULT_REGION",
+			Value: region,
+		})
+	}
+
+	if !skipReservedKeys {
+		env = append(env, corev1.EnvVar{
+			Name:  "AWS_ROLE_ARN",
+			Value: roleName,
+		})
+
+		env = append(env, corev1.EnvVar{
+			Name:  "AWS_WEB_IDENTITY_TOKEN_FILE",
+			Value: tokenFilePath,
+		})
+	}
+
 	container.Env = env
 	container.VolumeMounts = append(
 		container.VolumeMounts,
@@ -157,13 +189,13 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []p
 	var initContainers = []corev1.Container{}
 	for i := range pod.Spec.InitContainers {
 		container := pod.Spec.InitContainers[i]
-		addEnvToContainer(&container, m.MountPath, tokenFilePath, m.volName, roleName)
+		addEnvToContainer(&container, m.MountPath, tokenFilePath, m.volName, roleName, m.Region)
 		initContainers = append(initContainers, container)
 	}
 	var containers = []corev1.Container{}
 	for i := range pod.Spec.Containers {
 		container := pod.Spec.Containers[i]
-		addEnvToContainer(&container, m.MountPath, tokenFilePath, m.volName, roleName)
+		addEnvToContainer(&container, m.MountPath, tokenFilePath, m.volName, roleName, m.Region)
 		containers = append(containers, container)
 	}
 

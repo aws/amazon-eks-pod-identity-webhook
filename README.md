@@ -63,6 +63,8 @@ This webhook is for mutating pods that will require AWS IAM access.
         image: container-image:version
     ### Everything below is added by the webhook ###
         env:
+        - name: AWS_DEFAULT_REGION
+          value: us-west-2
         - name: AWS_ROLE_ARN
           value: "arn:aws:iam::111122223333:role/s3-reader"
         - name: AWS_WEB_IDENTITY_TOKEN_FILE
@@ -106,6 +108,7 @@ Or for Kubernetes 1.14+
 Usage of amazon-eks-pod-identity-webhook:
       --alsologtostderr                  log to standard error as well as files
       --annotation-prefix string         The Service Account annotation to look for (default "eks.amazonaws.com")
+      --aws-default-region string        If set, AWS_DEFAULT_REGION will be set to this value in mutated containers
       --in-cluster                       Use in-cluster authentication and certificate request API (default true)
       --kube-api string                  (out-of-cluster) The url to the API server
       --kubeconfig string                (out-of-cluster) Absolute path to the API server kubeconfig file
@@ -130,6 +133,11 @@ Usage of amazon-eks-pod-identity-webhook:
       --version                          Display the version and exit
       --vmodule moduleSpec               comma-separated list of pattern=N settings for file-filtered logging
 ```
+
+### AWS_DEFAULT_REGION Injection
+
+When the `aws-default-region` flag is set this webhook will inject `AWS_DEFAULT_REGION` in mutated containers if `AWS_DEFAULT_REGION` and `AWS_REGION` are not already set.
+
 
 ## Installation
 

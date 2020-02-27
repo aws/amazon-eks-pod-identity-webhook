@@ -179,6 +179,72 @@ var rawWindowsPodWithVolume = []byte(`
 }
 `)
 
+var rawPodWithoutRegion = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos"
+	  }
+	],
+	"serviceAccountName": "default"
+  }
+}
+`)
+
+var rawPodWithAWSRegion = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos",
+		"env": [
+		  {"name":"AWS_REGION","value":"paris"}
+		]
+	  }
+	],
+	"serviceAccountName": "default"
+  }
+}
+`)
+
+var rawPodWithAWSDefaultRegion = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos",
+		"env": [
+		  {"name":"AWS_DEFAULT_REGION","value":"paris"}
+		]
+	  }
+	],
+	"serviceAccountName": "default"
+  }
+}
+`)
+
 func getValidReview(pod []byte) *v1beta1.AdmissionReview {
 	return &v1beta1.AdmissionReview{
 		Request: &v1beta1.AdmissionRequest{
@@ -209,6 +275,10 @@ var validPatchIfVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes/0","
 var validPatchIfWindowsNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"C:\\var\\run\\secrets\\eks.amazonaws.com\\serviceaccount\\token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 var validPatchIfWindowsVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes/0","value":{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"C:\\var\\run\\secrets\\eks.amazonaws.com\\serviceaccount\\token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 
+var validPatchIfNoRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+var validPatchIfRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_REGION","value":"paris"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+var validPatchIfDefaultRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"paris"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+
 var jsonPatchType = v1beta1.PatchType("JSONPatch")
 
 var validResponseIfNoVolumesPresent = &v1beta1.AdmissionResponse{
@@ -236,6 +306,27 @@ var validResponseIfWindowsVolumesPresent = &v1beta1.AdmissionResponse{
 	UID:       "",
 	Allowed:   true,
 	Patch:     validPatchIfWindowsVolumesPresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfNoRegionPresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfNoRegionPresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfRegionPresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfRegionPresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfDefaultRegionPresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfDefaultRegionPresent,
 	PatchType: &jsonPatchType,
 }
 
@@ -300,6 +391,54 @@ func TestSecretStore(t *testing.T) {
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
 			getValidReview(rawWindowsBetaPodWithVolume),
 			validResponseIfWindowsVolumesPresent,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.caseName, func(t *testing.T) {
+			response := c.modifier.MutatePod(c.input)
+
+			if !reflect.DeepEqual(response, c.response) {
+				got, _ := json.MarshalIndent(response, "", "  ")
+				want, _ := json.MarshalIndent(c.response, "", "  ")
+				t.Errorf("Unexpected response. Got \n%s\n wanted \n%s", string(got), string(want))
+			}
+
+		})
+	}
+}
+
+func TestEnvUpdate(t *testing.T) {
+	testServiceAccount := &v1.ServiceAccount{}
+	testServiceAccount.Name = "default"
+	testServiceAccount.Namespace = "default"
+	testServiceAccount.Annotations = map[string]string{
+		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
+	}
+
+	cases := []struct {
+		caseName string
+		modifier *Modifier
+		input    *v1beta1.AdmissionReview
+		response *v1beta1.AdmissionResponse
+	}{
+		{
+			"ValidRequestSuccessWithoutRegion",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
+			getValidReview(rawPodWithoutVolume),
+			validResponseIfNoRegionPresent,
+		},
+		{
+			"ValidRequestSuccessWithRegion",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
+			getValidReview(rawPodWithAWSRegion),
+			validResponseIfRegionPresent,
+		},
+		{
+			"ValidRequestSuccessWithDefaultRegion",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
+			getValidReview(rawPodWithAWSDefaultRegion),
+			validResponseIfDefaultRegionPresent,
 		},
 	}
 
