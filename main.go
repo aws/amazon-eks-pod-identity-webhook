@@ -61,6 +61,7 @@ func main() {
 	audience := flag.String("token-audience", "sts.amazonaws.com", "The default audience for tokens. Can be overridden by annotation")
 	mountPath := flag.String("token-mount-path", "/var/run/secrets/eks.amazonaws.com/serviceaccount", "The path to mount tokens")
 	tokenExpiration := flag.Int64("token-expiration", 86400, "The token expiration")
+	region := flag.String("aws-default-region", "", "If set, AWS_DEFAULT_REGION will be set to this value in mutated containers")
 
 	version := flag.Bool("version", false, "Display the version and exit")
 
@@ -103,6 +104,7 @@ func main() {
 		handler.WithExpiration(*tokenExpiration),
 		handler.WithMountPath(*mountPath),
 		handler.WithServiceAccountCache(saCache),
+		handler.WithRegion(*region),
 	)
 
 	addr := fmt.Sprintf(":%d", *port)
