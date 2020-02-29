@@ -131,15 +131,6 @@ In order to use this feature, you'll need to set the following
 --service-account-issuer
 ```
 
-## Controller Manager configuration
-
-You'll need to point controller manager to the new signing private key by setting the following [controller manager flags](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/).
-
-```
-# Path to the signing (private) key ($PRIV_KEY)
---service-account-private-key-file
-```
-
 ## Audiences
 
 The above `--api-audiences` flag sets an `aud` value for tokens that do not
