@@ -138,10 +138,16 @@ func addEnvToContainer(container *corev1.Container, mountPath, tokenFilePath, vo
 
 	env := container.Env
 	if !skipRegionKey && region != "" {
-		env = append(env, corev1.EnvVar{
-			Name:  "AWS_DEFAULT_REGION",
-			Value: region,
-		})
+		env = append(env,
+			corev1.EnvVar{
+				Name:  "AWS_DEFAULT_REGION",
+				Value: region,
+			},
+			corev1.EnvVar{
+				Name:  "AWS_REGION",
+				Value: region,
+			},
+		)
 	}
 
 	if !skipReservedKeys {
