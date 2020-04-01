@@ -76,7 +76,7 @@ deploy-config: prep-config
 	kubectl apply -f deploy/service.yaml
 	kubectl apply -f deploy/mutatingwebhook-ca-bundle.yaml
 	sleep 1
-	kubectl certificate approve $$(kubectl get csr -o jsonpath='{.items[?(@.spec.username=="system:serviceaccount:default:pod-identity-webhook")].metadata.name}')
+	kubectl certificate approve $(kubectl get csr -o jsonpath='{.items[?(@.spec.username=="system:serviceaccount:default:pod-identity-webhook")].metadata.name}')
 
 delete-config:
 	@echo 'Tearing down mutating controller and associated resources...'
@@ -90,5 +90,3 @@ clean::
 	rm -rf ./certs/
 
 .PHONY: docker push build local-serve local-request cluster-up cluster-down prep-config deploy-config delete-config clean
-
-
