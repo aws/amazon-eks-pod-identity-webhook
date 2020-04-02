@@ -108,12 +108,12 @@ In order to use this feature, you'll need to set the following
 [API server flags](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/).
 
 ```
-# Path to the $PUB_KEY file from the beginning. 
+# Path to the $PKCS_KEY file from the beginning. 
 #
 # This flag can be specified for multiple times.
 # There is likely already one specified for legacy service accounts, if not, 
 # it is using the default value. Find out your default value and pass it explicitly
-# (along with this $PUB_KEY), otherwise your existing tokens will fail.
+# (along with this $PKCS_KEY), otherwise your existing tokens will fail.
 --service-account-key-file
 
 # Path to the signing (private) key ($PRIV_KEY)
