@@ -75,7 +75,7 @@ deploy-config: prep-config
 	kubectl apply -f deploy/deployment.yaml
 	kubectl apply -f deploy/service.yaml
 	kubectl apply -f deploy/mutatingwebhook-ca-bundle.yaml
-	until VAL=$$(kubectl get csr -o jsonpath='{.items[?(@.spec.username=="system:serviceaccount:default:pod-identity-webhook")].metadata.name}'); test -n $$VAR; do sleep 1; done
+	until kubectl get csr -o jsonpath='{.items[?(@.spec.username=="system:serviceaccount:default:pod-identity-webhook")].metadata.name}' | grep -m 1 "csr-"; do sleep 1 ; done
 	kubectl certificate approve $$(kubectl get csr -o jsonpath='{.items[?(@.spec.username=="system:serviceaccount:default:pod-identity-webhook")].metadata.name}')
 
 delete-config:
