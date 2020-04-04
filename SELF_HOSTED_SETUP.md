@@ -2,7 +2,16 @@
 
 If you are running your own Kubernetes cluster, there are several steps required for this feature to work.
 
-This feature requires Kubernetes 1.12 or greater.
+## Prerequisites
+
+1. Your cluster must be running Kubernetes 1.12 or later.
+
+2. Your cluster's `kube-controller-manager` must be properly configured to sign
+   certificate requests. You can verify this by validating that the
+   `--cluster-signing-cert-file` and `--cluster-signing-key-file` parameters
+   point to valid TLS certificate and key files. See [this
+   document](https://kubernetes.io/docs/tasks/tls/managing-tls-in-a-cluster) for
+   details.
 
 ## Projected Token Signing Keypair
 
@@ -140,7 +149,7 @@ usually be set to `kubernetes.svc.default`, or optionally the DNS name of your
 API server.
 
 When using a Kubernetes-issued token for an external system, you should use a
-different audience (or in OAuth-2 parlance, `client-id`). The external system
+different audience (or in OAuth2 parlance, `client-id`). The external system
 (such as AWS IAM) will usually require an audience, or client-id, at setup. For
 AWS IAM, a token's `aud` must match the OIDC Identity Provider's client ID. EKS
 uses the string `sts.amazonaws.com` as the default, but when using the webhook
@@ -151,4 +160,20 @@ yourself, you can use any audience you'd like as long as the webhook's flag
 
 From here, you can mostly follow the process in the [EKS
 documentation](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
-and substitue the cluster issuer with `https://$ISSUER_HOSTPATH`.
+and substitute the cluster issuer with `https://$ISSUER_HOSTPATH`.
+
+## Troubleshooting
+
+### `Certificate request was not signed: timed out waiting for the condition` appears in the logs
+
+Check the output of `kubectl get -n <namespace> csr | grep pod-identity-webhook`.
+The last column should contain `Approved,Issued` as in the following example:
+
+```
+csr-869cl   2m52s   system:serviceaccount:<namespace>:pod-identity-webhook   Approved,Issued
+```
+
+If it says `Approved` but not `Issued`, your cluster's controller manager is
+likely not configured properly as a TLS Certificate Authority.  Please review
+the Prerequisites section above.  You will need to restart the controller
+manager.
