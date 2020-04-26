@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: balajilovesoreos
+  annotations:
+    testing.eks.amazonaws.com/skip: "false"
+    testing.eks.amazonaws.com/serviceAccount/roleArn: "arn:aws-cn:iam::111122223333:role/s3-reader"
+    testing.eks.amazonaws.com/serviceAccount/audience: "sts.amazonaws.com"
+    testing.eks.amazonaws.com/handler/injectSTS: "true"
+    testing.eks.amazonaws.com/handler/region: "cn-north-1"
+    testing.eks.amazonaws.com/expectedPatch: '[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_REGION","value":"cn-northwest-1"},{"name":"AWS_STS_REGIONAL_ENDPOINTS","value":"regional"},{"name":"AWS_ROLE_ARN","value":"arn:aws-cn:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]'
+spec:
+  containers:
+  - env:
+    - name: AWS_REGION
+      value: cn-northwest-1
+    - name: AWS_STS_REGIONAL_ENDPOINTS
+      value: regional
+    image: amazonlinux
+    name: balajilovesoreos
+  serviceAccountName: default

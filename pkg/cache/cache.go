@@ -17,10 +17,12 @@ package cache
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -30,32 +32,34 @@ import (
 )
 
 type CacheResponse struct {
-	RoleARN  string
-	Audience string
+	RoleARN        string
+	Audience       string
+	UseRegionalSTS bool
 }
 
 type ServiceAccountCache interface {
 	Start()
-	Get(name, namespace string) (role, aud string)
+	Get(name, namespace string) (role, aud string, useRegionalSTS bool)
 }
 
 type serviceAccountCache struct {
-	mu               sync.RWMutex // guards cache
-	cache            map[string]*CacheResponse
-	store            cache.Store
-	controller       cache.Controller
-	clientset        kubernetes.Interface
-	annotationPrefix string
-	defaultAudience  string
+	mu                 sync.RWMutex // guards cache
+	cache              map[string]*CacheResponse
+	store              cache.Store
+	controller         cache.Controller
+	clientset          kubernetes.Interface
+	annotationPrefix   string
+	defaultAudience    string
+	defaultRegionalSTS bool
 }
 
-func (c *serviceAccountCache) Get(name, namespace string) (role, aud string) {
+func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool) {
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	resp := c.get(name, namespace)
 	if resp == nil {
-		return "", ""
+		return "", "", false
 	}
-	return resp.RoleARN, resp.Audience
+	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS
 }
 
 func (c *serviceAccountCache) get(name, namespace string) *CacheResponse {
@@ -76,14 +80,23 @@ func (c *serviceAccountCache) pop(name, namespace string) {
 }
 
 func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
-	arn, ok := sa.Annotations[c.annotationPrefix+"/role-arn"]
+	arn, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.RoleARNAnnotation]
 	resp := &CacheResponse{}
 	if ok {
 		resp.RoleARN = arn
-		if audience, ok := sa.Annotations[c.annotationPrefix+"/audience"]; ok {
+		resp.Audience = c.defaultAudience
+		if audience, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.AudienceAnnotation]; ok {
 			resp.Audience = audience
-		} else {
-			resp.Audience = c.defaultAudience
+		}
+
+		resp.UseRegionalSTS = c.defaultRegionalSTS
+		if disableRegionalStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.UseRegionalSTSAnnotation]; ok {
+			disableRegional, err := strconv.ParseBool(disableRegionalStr)
+			if err != nil {
+				klog.V(4).Infof("Ignoring service account %s/%s invalid value for disable-regional-sts annotation", sa.Namespace, sa.Name)
+			} else {
+				resp.UseRegionalSTS = !disableRegional
+			}
 		}
 	}
 	klog.V(5).Infof("Adding sa %s/%s to cache", sa.Name, sa.Namespace)
@@ -96,11 +109,12 @@ func (c *serviceAccountCache) set(name, namespace string, resp *CacheResponse) {
 	c.cache[namespace+"/"+name] = resp
 }
 
-func New(defaultAudience, prefix string, clientset kubernetes.Interface) ServiceAccountCache {
+func New(defaultAudience, prefix string, defaultRegionalSTS bool, clientset kubernetes.Interface) ServiceAccountCache {
 	c := &serviceAccountCache{
-		cache:            map[string]*CacheResponse{},
-		defaultAudience:  defaultAudience,
-		annotationPrefix: prefix,
+		cache:              map[string]*CacheResponse{},
+		defaultAudience:    defaultAudience,
+		annotationPrefix:   prefix,
+		defaultRegionalSTS: defaultRegionalSTS,
 	}
 
 	saListWatcher := cache.NewListWatchFromClient(

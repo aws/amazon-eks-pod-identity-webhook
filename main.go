@@ -62,6 +62,7 @@ func main() {
 	mountPath := flag.String("token-mount-path", "/var/run/secrets/eks.amazonaws.com/serviceaccount", "The path to mount tokens")
 	tokenExpiration := flag.Int64("token-expiration", 86400, "The token expiration")
 	region := flag.String("aws-default-region", "", "If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers")
+	regionalSTS := flag.Bool("sts-regional-endpoint", false, "Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to `false`.")
 
 	version := flag.Bool("version", false, "Display the version and exit")
 
@@ -96,15 +97,18 @@ func main() {
 	saCache := cache.New(
 		*audience,
 		*annotationPrefix,
+		*regionalSTS,
 		clientset,
 	)
 	saCache.Start()
 
 	mod := handler.NewModifier(
+		handler.WithAnnotationDomain(*annotationPrefix),
 		handler.WithExpiration(*tokenExpiration),
 		handler.WithMountPath(*mountPath),
 		handler.WithServiceAccountCache(saCache),
 		handler.WithRegion(*region),
+		handler.WithRegionalSTS(*regionalSTS),
 	)
 
 	addr := fmt.Sprintf(":%d", *port)
@@ -123,7 +127,6 @@ func main() {
 	metricsMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "ok")
 	})
-
 
 	tlsConfig := &tls.Config{}
 
@@ -180,8 +183,8 @@ func main() {
 	handler.ShutdownOnTerm(server, time.Duration(10)*time.Second)
 
 	metricsServer := &http.Server{
-		Addr:      metricsAddr,
-		Handler:   metricsMux,
+		Addr:    metricsAddr,
+		Handler: metricsMux,
 	}
 
 	go func() {

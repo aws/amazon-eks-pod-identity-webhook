@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: balajilovesoreos
+  uid: be8695c4-4ad0-4038-8786-c508853aa255
+  annotations:
+    testing.eks.amazonaws.com/skip: "false"
+    testing.eks.amazonaws.com/serviceAccount/roleArn: "arn:aws:iam::111122223333:role/s3-reader"
+    testing.eks.amazonaws.com/serviceAccount/audience: "sts.amazonaws.com"
+    testing.eks.amazonaws.com/expectedPatch: '[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"C:\\var\\run\\secrets\\eks.amazonaws.com\\serviceaccount\\token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]'
+spec:
+  containers:
+  - image: amazonlinux
+    name: balajilovesoreos
+  nodeSelector:
+    beta.kubernetes.io/arch: amd64
+    beta.kubernetes.io/os: windows
+  serviceAccountName: default
+

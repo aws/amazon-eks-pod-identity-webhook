@@ -2,7 +2,7 @@ FROM golang AS builder
 
 WORKDIR $GOPATH/src/github.com/aws/amazon-eks-pod-identity-webhook
 COPY . ./
-RUN CGO_ENABLED=0 GOOS=linux go build -v -a -installsuffix nocgo -o /webhook .
+RUN GOPROXY=direct CGO_ENABLED=0 GOOS=linux go build -o /webhook -v -a -installsuffix nocgo -ldflags="-buildid='' -w -s" .
 
 FROM scratch
 COPY ATTRIBUTIONS.txt /ATTRIBUTIONS.txt

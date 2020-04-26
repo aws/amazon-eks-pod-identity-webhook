@@ -21,17 +21,17 @@ This webhook is for mutating pods that will require AWS IAM access.
       {
        "Effect": "Allow",
        "Principal": {
-        "Federated": "arn:aws:iam::111122223333:oidc-provider/oidc.us-west-2.eks.amazonaws.com/624a142e-43fc-4a4e-9a65-0adbfe9d6a85"
+        "Federated": "arn:aws:iam::111122223333:oidc-provider/oidc.REGION.eks.amazonaws.com/CLUSTER_ID"
        },
        "Action": "sts:AssumeRoleWithWebIdentity",
        "Condition": {
         "__doc_comment": "scope the role to the service account (optional)",
         "StringEquals": {
-         "oidc.us-west-2.eks.amazonaws.com/624a142e-43fc-4a4e-9a65-0adbfe9d6a85:sub": "system:serviceaccount:default:my-serviceaccount"
+         "oidc.REGION.eks.amazonaws.com/CLUSTER_ID:sub": "system:serviceaccount:default:my-serviceaccount"
         },
         "__doc_comment": "scope the role to a namespace (optional)",
         "StringLike": {
-         "oidc.us-west-2.eks.amazonaws.com/624a142e-43fc-4a4e-9a65-0adbfe9d6a85:sub": "system:serviceaccount:default:*"
+         "oidc.REGION.eks.amazonaws.com/CLUSTER_ID:sub": "system:serviceaccount:default:*"
         }
        }
       }
@@ -48,6 +48,11 @@ This webhook is for mutating pods that will require AWS IAM access.
       namespace: default
       annotations:
         eks.amazonaws.com/role-arn: "arn:aws:iam::111122223333:role/s3-reader"
+        # optional: Defaults to "sts.amazonaws.com" if not set
+        eks.amazonaws.com/audience: "sts.amazonaws.com"
+        # optional: When set to "true", adds AWS_STS_REGIONAL_ENDPOINTS env var
+        #   to containers
+        eks.amazonaws.com/sts-regional-endpoints: "true"
     ```
 4. All new pod pods launched using this Service Account will be modified to use
    IAM for pods. Below is an example pod spec with the environment variables and
@@ -58,9 +63,18 @@ This webhook is for mutating pods that will require AWS IAM access.
     metadata:
       name: my-pod
       namespace: default
+      annotations:
+        # optional: A comma-separated list of initContainers and container names
+        #   to skip adding volumes and environemnt variables
+        eks.amazonaws.com/skip-containers: "init-first,sidecar"
     spec:
       serviceAccountName: my-serviceaccount
+      initContainers:
+      - name: init-first
+        image: container-image:version
       containers:
+      - name: sidecar
+        image: container-image:version
       - name: container-name
         image: container-image:version
     ### Everything below is added by the webhook ###
@@ -73,6 +87,8 @@ This webhook is for mutating pods that will require AWS IAM access.
           value: "arn:aws:iam::111122223333:role/s3-reader"
         - name: AWS_WEB_IDENTITY_TOKEN_FILE
           value: "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
+        - name: AWS_STS_REGIONAL_ENDPOINTS
+          value: "regional"
         volumeMounts:
         - mountPath: "/var/run/secrets/eks.amazonaws.com/serviceaccount/"
           name: aws-token
@@ -85,7 +101,7 @@ This webhook is for mutating pods that will require AWS IAM access.
               expirationSeconds: 86400
               path: token
     ```
-   
+
 ### Usage with Windows container workloads
 
 To ensure workloads are scheduled on windows nodes have the right environment variables, they must have a `nodeSelector` targeting windows it must run on.  Workloads targeting windows nodes using `nodeAffinity` are currently not supported.
@@ -125,12 +141,14 @@ Usage of amazon-eks-pod-identity-webhook:
       --log_file string                  If non-empty, use this log file
       --log_file_max_size uint           Defines the maximum size a log file can grow to. Unit is megabytes. If the value is 0, the maximum file size is unlimited. (default 1800)
       --logtostderr                      log to standard error instead of files (default true)
+      --metrics-port int                 Port to listen on for metrics and healthz (http) (default 9999)
       --namespace string                 (in-cluster) The namespace name this webhook and the tls secret resides in (default "eks")
       --port int                         Port to listen on (default 443)
       --service-name string              (in-cluster) The service name fronting this webhook (default "pod-identity-webhook")
       --skip_headers                     If true, avoid header prefixes in the log messages
       --skip_log_headers                 If true, avoid headers when openning log files
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
+      --sts-regional-endpoint false      Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to false.
       --tls-cert string                  (out-of-cluster) TLS certificate file path (default "/etc/webhook/certs/tls.crt")
       --tls-key string                   (out-of-cluster) TLS key file path (default "/etc/webhook/certs/tls.key")
       --tls-secret string                (in-cluster) The secret name for storing the TLS serving cert (default "pod-identity-webhook")
@@ -146,6 +164,18 @@ Usage of amazon-eks-pod-identity-webhook:
 
 When the `aws-default-region` flag is set this webhook will inject `AWS_DEFAULT_REGION` and `AWS_REGION` in mutated containers if `AWS_DEFAULT_REGION` and `AWS_REGION` are not already set.
 
+### AWS_STS_REGIONAL_ENDPOINTS Injection
+
+When the `sts-regional-endpoint` flag is set to `true`, the webhook will
+inject the environment variable `AWS_STS_REGIONAL_ENDPOINTS` with the value set
+to `regional`. This environment variable will configure the AWS SDKs to perform
+the `sts:AssumeRoleWithWebIdentity` call to get credentials from the regional
+endpoint, instead of the global endpoint in `us-east-1`. This is desirable in
+almost all cases, unless the STS regional endpoint is [disabled in your
+account](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_enable-regions.html).
+
+You can also enable this per-service account with the annotation
+`eks.amazonaws.com/sts-regional-endpoint` set to `"true"`.
 
 ## Container Images
 
@@ -169,9 +199,6 @@ This will:
 For self-hosted API server configuration, see see [SELF_HOSTED_SETUP.md](/SELF_HOSTED_SETUP.md)
 
 ### On API server
-TODO
-
-## Development
 TODO
 
 ## Code of Conduct

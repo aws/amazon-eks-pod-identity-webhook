@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: balajilovesoreos
+  annotations:
+    testing.eks.amazonaws.com/skip: "false"
+    testing.eks.amazonaws.com/serviceAccount/roleArn: "arn:aws:iam::111122223333:role/s3-reader"
+    testing.eks.amazonaws.com/serviceAccount/audience: "sts.amazonaws.com"
+    testing.eks.amazonaws.com/handler/region: "us-west-2"
+    testing.eks.amazonaws.com/expectedPatch: '[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"sidecar","image":"amazonlinux","resources":{}},{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"already-defined"},{"name":"AWS_DEFAULT_REGION","value":"us-west-2"},{"name":"AWS_REGION","value":"us-west-2"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]'
+    # Pod Annotation
+    eks.amazonaws.com/skip-containers: "sidecar"
+spec:
+  containers:
+  - image: amazonlinux
+    name: sidecar
+  - image: amazonlinux
+    name: balajilovesoreos
+    env:
+    - name: AWS_ROLE_ARN
+      value: already-defined
+  serviceAccountName: default
