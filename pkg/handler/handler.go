@@ -206,11 +206,11 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []p
 	}
 
 	volume := corev1.Volume{
-		m.volName,
-		corev1.VolumeSource{
+		Name: m.volName,
+		VolumeSource: corev1.VolumeSource{
 			Projected: &corev1.ProjectedVolumeSource{
 				Sources: []corev1.VolumeProjection{
-					corev1.VolumeProjection{
+					{
 						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
 							Audience:          audience,
 							ExpirationSeconds: &m.Expiration,
@@ -223,7 +223,7 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []p
 	}
 
 	patch := []patchOperation{
-		patchOperation{
+		{
 			Op:    "add",
 			Path:  "/spec/volumes/0",
 			Value: volume,
@@ -232,7 +232,7 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []p
 
 	if pod.Spec.Volumes == nil {
 		patch = []patchOperation{
-			patchOperation{
+			{
 				Op:   "add",
 				Path: "/spec/volumes",
 				Value: []corev1.Volume{
