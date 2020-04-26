@@ -5,20 +5,23 @@ include ${BGO_MAKEFILE}
 export CGO_ENABLED=0
 export T=github.com/aws/amazon-eks-pod-identity-webhook
 UNAME_S = $(shell uname -s)
-GO_INSTALL_FLAGS = -ldflags="-s -w"
+GO_LDFLAGS = -ldflags='-s -w -buildid=""'
 
 install:: build
 ifeq ($(UNAME_S), Darwin)
-	GOOS=darwin GOARCH=amd64 go build -o build/gopath/bin/darwin_amd64/amazon-eks-pod-identity-webhook $(GO_INSTALL_FLAGS) $V $T
+	GOOS=darwin GOARCH=amd64 go build -o build/gopath/bin/darwin_amd64/amazon-eks-pod-identity-webhook $(GO_LDFLAGS) $V $T
 endif
-	GOOS=linux GOARCH=amd64 go build -o build/gopath/bin/linux_amd64/amazon-eks-pod-identity-webhook $(GO_INSTALL_FLAGS) $V $T
-
+	GOOS=linux GOARCH=amd64 go build -o build/gopath/bin/linux_amd64/amazon-eks-pod-identity-webhook $(GO_LDFLAGS) $V $T
 
 # Generic make
 REGISTRY_ID?=602401143452
 IMAGE_NAME?=eks/pod-identity-webhook
 REGION?=us-west-2
 IMAGE?=$(REGISTRY_ID).dkr.ecr.$(REGION).amazonaws.com/$(IMAGE_NAME)
+
+test:
+	go test -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out
 
 docker:
 	@echo 'Building image $(IMAGE)...'
@@ -94,7 +97,7 @@ delete-config:
 
 clean::
 	rm -rf ./amazon-eks-pod-identity-webhook
-	rm -rf ./certs/
+	rm -rf ./certs/ coverage.out
 
 .PHONY: docker push build local-serve local-request cluster-up cluster-down prep-config deploy-config delete-config clean
 

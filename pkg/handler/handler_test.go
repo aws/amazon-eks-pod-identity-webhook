@@ -16,7 +16,12 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
@@ -24,319 +29,80 @@ import (
 	"k8s.io/api/admission/v1beta1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
+
+func TestMutatePod(t *testing.T) {
+	testServiceAccount := &v1.ServiceAccount{}
+	testServiceAccount.Name = "default"
+	testServiceAccount.Namespace = "default"
+	testServiceAccount.Annotations = map[string]string{
+		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
+	}
+
+	modifier := NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)))
+	cases := []struct {
+		caseName string
+		input    *v1beta1.AdmissionReview
+		response *v1beta1.AdmissionResponse
+	}{
+		{
+			"nilBody",
+			nil,
+			&v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "bad content"}},
+		},
+		{
+			"NoRequest",
+			&v1beta1.AdmissionReview{Request: nil},
+			&v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "bad content"}},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.caseName, func(t *testing.T) {
+			response := modifier.MutatePod(c.input)
+
+			if !reflect.DeepEqual(response, c.response) {
+				got, _ := json.MarshalIndent(response, "", "  ")
+				want, _ := json.MarshalIndent(c.response, "", "  ")
+				t.Errorf("Unexpected response. Got \n%s\n wanted \n%s", string(got), string(want))
+			}
+		})
+	}
+}
+
+var jsonPatchType = v1beta1.PatchType("JSONPatch")
 
 var rawPodWithoutVolume = []byte(`
 {
   "apiVersion": "v1",
   "kind": "Pod",
   "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+       "name": "balajilovesoreos",
+       "uid": "be8695c4-4ad0-4038-8786-c508853aa255"
   },
   "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos"
-	  }
-	],
-	"serviceAccountName": "default"
+       "containers": [
+         {
+               "image": "amazonlinux",
+               "name": "balajilovesoreos"
+         }
+       ],
+       "serviceAccountName": "default"
   }
 }
 `)
 
-var rawWindowsBetaPodWithoutVolume = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos"
-	  }
-	],
-	"serviceAccountName": "default",
-	"nodeSelector": {
-		"beta.kubernetes.io/arch": "amd64",
-		"beta.kubernetes.io/os": "windows"
-	}
-  }
-}
-`)
+var validPatchIfNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 
-var rawWindowsPodWithoutVolume = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos"
-	  }
-	],
-	"serviceAccountName": "default",
-	"nodeSelector": {
-		"kubernetes.io/arch": "amd64",
-		"kubernetes.io/os": "windows"
-	}
-  }
+var validHandlerResponse = &v1beta1.AdmissionResponse{
+	UID:       "918ef1dc-928f-4525-99ef-988389f263c3",
+	Allowed:   true,
+	Patch:     validPatchIfNoVolumesPresent,
+	PatchType: &jsonPatchType,
 }
-`)
-
-var rawPodWithVolume = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos"
-	  }
-	],
-	"serviceAccountName": "default",
-	"volumes": [
-	  {
-	    "name": "my-volume"
-	  }
-	]
-  }
-}
-`)
-
-var rawPodWithInitContainer = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos"
-	  }
-	],
-	"initContainers": [
-	  {
-		"image": "amazonlinux",
-		"name": "initcontainer"
-	  }
-	],
-	"serviceAccountName": "default"
-  }
-}
-`)
-
-var rawPodWithIAMTokenVolume = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos"
-	  }
-	],
-	"serviceAccountName": "default",
-	"volumes": [
-	  {
-	    "name": "aws-iam-token"
-	  }
-	]
-  }
-}
-`)
-
-var rawPodWithIAMTokenVolumeAndVolumeMount = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos",
-		"env": [
-			{
-				"name": "AWS_ROLE_ARN",
-				"value": "arn:aws:iam::111122223333:role/s3-reader"
-			},
-			{
-				"name": "AWS_WEB_IDENTITY_TOKEN_FILE",
-				"value": "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
-			}
-		],
-		"volumeMounts": [
-			{
-				"mountPath": "/var/run/secrets/eks.amazonaws.com/serviceaccount",
-				"name": "aws-iam-token",
-				"readOnly": true
-			}
-		]
-	  }
-	],
-	"serviceAccountName": "default",
-	"volumes": [
-	  {
-	    "name": "aws-iam-token"
-	  }
-	]
-  }
-}
-`)
-
-var rawWindowsBetaPodWithVolume = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos"
-	  }
-	],
-	"serviceAccountName": "default",
-	"nodeSelector": {
-		"beta.kubernetes.io/arch": "amd64",
-		"beta.kubernetes.io/os": "windows"
-	},
-	"volumes": [
-	  {
-		"name": "my-volume"
-	  }
-	]
-  }
-}
-`)
-
-var rawWindowsPodWithVolume = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos"
-	  }
-	],
-	"serviceAccountName": "default",
-	"nodeSelector": {
-		"kubernetes.io/arch": "amd64",
-		"kubernetes.io/os": "windows"
-	},
-	"volumes": [
-	  {
-		"name": "my-volume"
-	  }
-	]
-  }
-}
-`)
-
-var rawPodWithoutRegion = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos"
-	  }
-	],
-	"serviceAccountName": "default"
-  }
-}
-`)
-
-var rawPodWithAWSRegion = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos",
-		"env": [
-		  {"name":"AWS_REGION","value":"paris"}
-		]
-	  }
-	],
-	"serviceAccountName": "default"
-  }
-}
-`)
-
-var rawPodWithAWSDefaultRegion = []byte(`
-{
-  "apiVersion": "v1",
-  "kind": "Pod",
-  "metadata": {
-	"name": "balajilovesoreos",
-	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
-  },
-  "spec": {
-	"containers": [
-	  {
-		"image": "amazonlinux",
-		"name": "balajilovesoreos",
-		"env": [
-		  {"name":"AWS_DEFAULT_REGION","value":"paris"}
-		]
-	  }
-	],
-	"serviceAccountName": "default"
-  }
-}
-`)
 
 func getValidReview(pod []byte) *v1beta1.AdmissionReview {
 	return &v1beta1.AdmissionReview{
@@ -350,7 +116,7 @@ func getValidReview(pod []byte) *v1beta1.AdmissionReview {
 			Operation: "CREATE",
 			UserInfo: authenticationv1.UserInfo{
 				Username: "kubernetes-admin",
-				UID:      "heptio-authenticator-aws:111122223333:AROAR2TG44V5CLZCFPOQZ",
+				UID:      "aws-iam-authenticator:111122223333:AROAR2TG44V5CLZCFPOQZ",
 				Groups:   []string{"system:authenticated", "system:masters"},
 			},
 			Object: runtime.RawExtension{
@@ -362,232 +128,102 @@ func getValidReview(pod []byte) *v1beta1.AdmissionReview {
 	}
 }
 
-var validPatchIfNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
-var validPatchIfVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes/0","value":{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
-
-var validPatchIfIAMTokenVolumePresent = []byte(`[{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
-var validPatchIfIAMTokenVolumeAndVolumeMountPresent = []byte(`[{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"},{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
-
-var validPatchIfWindowsNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"C:\\var\\run\\secrets\\eks.amazonaws.com\\serviceaccount\\token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
-var validPatchIfWindowsVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes/0","value":{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"C:\\var\\run\\secrets\\eks.amazonaws.com\\serviceaccount\\token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
-
-var validPatchIfNoRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
-var validPatchIfRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_REGION","value":"paris"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
-var validPatchIfDefaultRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"paris"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
-var validPatchIfInitContainerPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]},{"op":"add","path":"/spec/initContainers","value":[{"name":"initcontainer","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
-
-var jsonPatchType = v1beta1.PatchType("JSONPatch")
-
-var validResponseIfNoVolumesPresent = &v1beta1.AdmissionResponse{
-	UID:       "",
-	Allowed:   true,
-	Patch:     validPatchIfNoVolumesPresent,
-	PatchType: &jsonPatchType,
+func serializeAdmissionReview(t *testing.T, want *v1beta1.AdmissionReview) []byte {
+	wantedBytes, err := json.Marshal(want)
+	if err != nil {
+		t.Errorf("Failed to marshal desired response: %v", err)
+		return nil
+	}
+	return wantedBytes
 }
 
-var validResponseIfVolumesPresent = &v1beta1.AdmissionResponse{
-	UID:       "",
-	Allowed:   true,
-	Patch:     validPatchIfVolumesPresent,
-	PatchType: &jsonPatchType,
-}
-
-var validResponseIfIAMTokenVolumePresent = &v1beta1.AdmissionResponse{
-	UID:       "",
-	Allowed:   true,
-	Patch:     validPatchIfIAMTokenVolumePresent,
-	PatchType: &jsonPatchType,
-}
-
-var validResponseIfIAMTokenVolumeAndVolumeMountPresent = &v1beta1.AdmissionResponse{
-	UID:       "",
-	Allowed:   true,
-	Patch:     validPatchIfIAMTokenVolumeAndVolumeMountPresent,
-	PatchType: &jsonPatchType,
-}
-
-var validResponseIfWindowsNoVolumesPresent = &v1beta1.AdmissionResponse{
-	UID:       "",
-	Allowed:   true,
-	Patch:     validPatchIfWindowsNoVolumesPresent,
-	PatchType: &jsonPatchType,
-}
-
-var validResponseIfWindowsVolumesPresent = &v1beta1.AdmissionResponse{
-	UID:       "",
-	Allowed:   true,
-	Patch:     validPatchIfWindowsVolumesPresent,
-	PatchType: &jsonPatchType,
-}
-
-var validResponseIfNoRegionPresent = &v1beta1.AdmissionResponse{
-	UID:       "",
-	Allowed:   true,
-	Patch:     validPatchIfNoRegionPresent,
-	PatchType: &jsonPatchType,
-}
-
-var validResponseIfRegionPresent = &v1beta1.AdmissionResponse{
-	UID:       "",
-	Allowed:   true,
-	Patch:     validPatchIfRegionPresent,
-	PatchType: &jsonPatchType,
-}
-
-var validResponseIfDefaultRegionPresent = &v1beta1.AdmissionResponse{
-	UID:       "",
-	Allowed:   true,
-	Patch:     validPatchIfDefaultRegionPresent,
-	PatchType: &jsonPatchType,
-}
-
-var validResponseIfInitContainerPresent = &v1beta1.AdmissionResponse{
-	UID:       "",
-	Allowed:   true,
-	Patch:     validPatchIfInitContainerPresent,
-	PatchType: &jsonPatchType,
-}
-
-func TestSecretStore(t *testing.T) {
-	testServiceAccount := &v1.ServiceAccount{}
+func TestModifierHandler(t *testing.T) {
+	testServiceAccount := &corev1.ServiceAccount{}
 	testServiceAccount.Name = "default"
 	testServiceAccount.Namespace = "default"
 	testServiceAccount.Annotations = map[string]string{
 		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
 	}
 
+	modifier := NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)))
+
+	ts := httptest.NewServer(
+		http.HandlerFunc(modifier.Handle),
+	)
+	defer ts.Close()
+
 	cases := []struct {
-		caseName string
-		modifier *Modifier
-		input    *v1beta1.AdmissionReview
-		response *v1beta1.AdmissionResponse
+		caseName         string
+		input            []byte
+		inputContentType string
+		want             []byte
 	}{
 		{
 			"nilBody",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
 			nil,
-			&v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "bad content"}},
+			"application/json",
+			serializeAdmissionReview(t, &v1beta1.AdmissionReview{
+				Response: &v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "bad content"}},
+			}),
 		},
 		{
 			"NoRequest",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			&v1beta1.AdmissionReview{Request: nil},
-			&v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "bad content"}},
+			serializeAdmissionReview(t, &v1beta1.AdmissionReview{Request: nil}),
+			"application/json",
+			serializeAdmissionReview(t, &v1beta1.AdmissionReview{
+				Response: &v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "bad content"}},
+			}),
+		},
+		{
+			"BadContentType",
+			serializeAdmissionReview(t, &v1beta1.AdmissionReview{Request: nil}),
+			"application/xml",
+			[]byte("Invalid Content-Type, expected `application/json`\n"),
+		},
+		{
+			"InvalidJSON",
+			[]byte(`{"request": {"object": "\"metadata\":{\"name\":\"fake\""}`),
+			"application/json",
+			[]byte(`{"response":{"uid":"","allowed":false,"status":{"metadata":{},"message":"couldn't get version/kind; json parse error: unexpected end of JSON input"}}}`),
+		},
+		{
+			"InvalidPodBytes",
+			[]byte(`{"request": {"object": "\"metadata\":{\"name\":\"fake\""}}`),
+			"application/json",
+			[]byte(`{"response":{"uid":"","allowed":false,"status":{"metadata":{},"message":"json: cannot unmarshal string into Go value of type v1.Pod"}}}`),
 		},
 		{
 			"ValidRequestSuccessWithoutVolumes",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(rawPodWithoutVolume),
-			validResponseIfNoVolumesPresent,
-		},
-		{
-			"ValidRequestSuccessWindowsWithoutVolumes",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(rawWindowsBetaPodWithoutVolume),
-			validResponseIfWindowsNoVolumesPresent,
-		},
-		{
-			"ValidRequestSuccessWindowsBetaWithoutVolumes",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(rawWindowsBetaPodWithoutVolume),
-			validResponseIfWindowsNoVolumesPresent,
-		},
-		{
-			"ValidRequestSuccessWithVolumes",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(rawPodWithVolume),
-			validResponseIfVolumesPresent,
-		},
-		{
-			"ValidRequestSuccessWindowsWithVolumes",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(rawWindowsPodWithVolume),
-			validResponseIfWindowsVolumesPresent,
-		},
-		{
-			"ValidRequestSuccessWindowsBetaWithVolumes",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
-			getValidReview(rawWindowsBetaPodWithVolume),
-			validResponseIfWindowsVolumesPresent,
+			serializeAdmissionReview(t, getValidReview(rawPodWithoutVolume)),
+			"application/json",
+			serializeAdmissionReview(t, &v1beta1.AdmissionReview{Response: validHandlerResponse}),
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.caseName, func(t *testing.T) {
-			response := c.modifier.MutatePod(c.input)
-
-			if !reflect.DeepEqual(response, c.response) {
-				got, _ := json.MarshalIndent(response, "", "  ")
-				want, _ := json.MarshalIndent(c.response, "", "  ")
-				t.Errorf("Unexpected response. Got \n%s\n wanted \n%s", string(got), string(want))
+			var buf io.Reader
+			if c.input != nil {
+				buf = bytes.NewBuffer(c.input)
+			}
+			resp, err := http.Post(ts.URL, c.inputContentType, buf)
+			if err != nil {
+				t.Errorf("Failed to make request: %v", err)
+				return
+			}
+			responseBytes, err := ioutil.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				t.Errorf("Failed to read response: %v", err)
+				return
 			}
 
-		})
-	}
-}
-
-func TestEnvUpdate(t *testing.T) {
-	testServiceAccount := &v1.ServiceAccount{}
-	testServiceAccount.Name = "default"
-	testServiceAccount.Namespace = "default"
-	testServiceAccount.Annotations = map[string]string{
-		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
-	}
-
-	cases := []struct {
-		caseName string
-		modifier *Modifier
-		input    *v1beta1.AdmissionReview
-		response *v1beta1.AdmissionResponse
-	}{
-		{
-			"ValidRequestSuccessWithoutRegion",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
-			getValidReview(rawPodWithoutVolume),
-			validResponseIfNoRegionPresent,
-		},
-		{
-			"ValidRequestSuccessWithRegion",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
-			getValidReview(rawPodWithAWSRegion),
-			validResponseIfRegionPresent,
-		},
-		{
-			"ValidRequestSuccessWithDefaultRegion",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
-			getValidReview(rawPodWithAWSDefaultRegion),
-			validResponseIfDefaultRegionPresent,
-		},
-		{
-			"ValidRequestSuccessWithIAMTokenVolumePresent",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
-			getValidReview(rawPodWithIAMTokenVolume),
-			validResponseIfIAMTokenVolumePresent,
-		},
-		{
-			"ValidRequestSuccessWithIAMTokenVolumeAndVolumeMountPresent",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
-			getValidReview(rawPodWithIAMTokenVolumeAndVolumeMount),
-			validResponseIfIAMTokenVolumeAndVolumeMountPresent,
-		},
-		{
-			"ValidRequestSuccessWithInitContainer",
-			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
-			getValidReview(rawPodWithInitContainer),
-			validResponseIfInitContainerPresent,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.caseName, func(t *testing.T) {
-			response := c.modifier.MutatePod(c.input)
-
-			if !reflect.DeepEqual(response, c.response) {
-				got, _ := json.MarshalIndent(response, "", "  ")
-				want, _ := json.MarshalIndent(c.response, "", "  ")
-				t.Errorf("Unexpected response. Got \n%s\n wanted \n%s", string(got), string(want))
+			if bytes.Compare(responseBytes, c.want) != 0 {
+				t.Errorf("Expected response didn't match: \nGot\n\t\"%v\"\nWanted:\n\t\"%v\"\n",
+					string(responseBytes),
+					string(c.want),
+				)
 			}
-
 		})
 	}
 }

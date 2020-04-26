@@ -2,6 +2,7 @@ package cache
 
 import (
 	"k8s.io/api/core/v1"
+	"strconv"
 	"sync"
 )
 
@@ -21,8 +22,10 @@ func NewFakeServiceAccountCache(accounts ...*v1.ServiceAccount) *FakeServiceAcco
 		if !ok {
 			audience = "sts.amazonaws.com"
 		}
+		regionalSTSstr, _ := sa.Annotations["eks.amazonaws.com/sts-regional-endpoints"]
+		regionalSTS, _ := strconv.ParseBool(regionalSTSstr)
 
-		c.Add(sa.Name, sa.Namespace, arn, audience)
+		c.Add(sa.Name, sa.Namespace, arn, audience, regionalSTS)
 	}
 	return c
 }
@@ -33,23 +36,24 @@ var _ ServiceAccountCache = &FakeServiceAccountCache{}
 func (f *FakeServiceAccountCache) Start() {}
 
 // Get gets a service account from the cache
-func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string) {
+func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	resp, ok := f.cache[namespace+"/"+name]
 	if !ok {
-		return "", ""
+		return "", "", false
 	}
-	return resp.RoleARN, resp.Audience
+	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS
 }
 
 // Add adds a cache entry
-func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string) {
+func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string, regionalSTS bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cache[namespace+"/"+name] = &CacheResponse{
-		RoleARN:  role,
-		Audience: aud,
+		RoleARN:        role,
+		Audience:       aud,
+		UseRegionalSTS: regionalSTS,
 	}
 }
 
