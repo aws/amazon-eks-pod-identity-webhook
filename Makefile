@@ -25,7 +25,9 @@ docker:
 	docker build --no-cache -t $(IMAGE) .
 
 push: docker
-	eval $$(aws ecr get-login --registry-ids $(REGISTRY_ID) --no-include-email)
+	if ! aws ecr get-login-password --region $(REGION) | docker login --username AWS --password-stdin $(REGISTRY_ID).dkr.ecr.$(REGION).amazonaws.com; then \
+	  eval $$(aws ecr get-login --registry-ids $(REGISTRY_ID) --no-include-email); \
+	fi
 	docker push $(IMAGE)
 
 amazon-eks-pod-identity-webhook:
