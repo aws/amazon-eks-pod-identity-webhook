@@ -25,14 +25,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cert"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/handler"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	flag "github.com/spf13/pflag"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
+
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cert"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/handler"
 )
 
 var webhookVersion = "v0.1.0"
@@ -124,7 +125,6 @@ func main() {
 		fmt.Fprintf(w, "ok")
 	})
 
-
 	tlsConfig := &tls.Config{}
 
 	if *inCluster {
@@ -180,8 +180,8 @@ func main() {
 	handler.ShutdownOnTerm(server, time.Duration(10)*time.Second)
 
 	metricsServer := &http.Server{
-		Addr:      metricsAddr,
-		Handler:   metricsMux,
+		Addr:    metricsAddr,
+		Handler: metricsMux,
 	}
 
 	go func() {

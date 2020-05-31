@@ -30,14 +30,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/apis/core/v1"
 )
 
 func init() {
 	_ = corev1.AddToScheme(runtimeScheme)
+	_ = clientgoscheme.AddToScheme(runtimeScheme)
 	_ = admissionregistrationv1beta1.AddToScheme(runtimeScheme)
-	_ = v1.AddToScheme(runtimeScheme)
 }
 
 var (
