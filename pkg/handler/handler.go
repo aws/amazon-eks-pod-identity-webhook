@@ -114,13 +114,6 @@ func addEnvToContainer(container *corev1.Container, mountPath, tokenFilePath, vo
 		}
 	}
 
-	for _, vol := range container.VolumeMounts {
-		if vol.Name == volName {
-			// Skip if volume is already present
-			skipReservedKeys = true
-		}
-	}
-
 	awsRegionKeys := map[string]string{
 		"AWS_REGION":         "",
 		"AWS_DEFAULT_REGION": "",
@@ -163,24 +156,27 @@ func addEnvToContainer(container *corev1.Container, mountPath, tokenFilePath, vo
 	}
 
 	container.Env = env
-	container.VolumeMounts = append(
-		container.VolumeMounts,
-		corev1.VolumeMount{
-			Name:      volName,
-			ReadOnly:  true,
-			MountPath: mountPath,
-		},
-	)
-}
 
-func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []patchOperation {
-	// return early if volume already exists
-	for _, vol := range pod.Spec.Volumes {
-		if vol.Name == m.volName {
-			return nil
+	volExists := false
+	for _, vol := range container.VolumeMounts {
+		if vol.Name == volName {
+			volExists = true
 		}
 	}
 
+	if !volExists {
+		container.VolumeMounts = append(
+			container.VolumeMounts,
+			corev1.VolumeMount{
+				Name:      volName,
+				ReadOnly:  true,
+				MountPath: mountPath,
+			},
+		)
+	}
+}
+
+func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []patchOperation {
 	tokenFilePath := filepath.Join(m.MountPath, m.tokenName)
 
 	betaNodeSelector, _ := pod.Spec.NodeSelector["beta.kubernetes.io/os"]
@@ -222,24 +218,34 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []p
 		},
 	}
 
-	patch := []patchOperation{
-		{
+	patch := []patchOperation{}
+
+	// skip adding volume if it already exists
+	volExists := false
+	for _, vol := range pod.Spec.Volumes {
+		if vol.Name == m.volName {
+			volExists = true
+		}
+	}
+
+	if !volExists {
+		volPatch := patchOperation{
 			Op:    "add",
 			Path:  "/spec/volumes/0",
 			Value: volume,
-		},
-	}
+		}
 
-	if pod.Spec.Volumes == nil {
-		patch = []patchOperation{
-			{
+		if pod.Spec.Volumes == nil {
+			volPatch = patchOperation{
 				Op:   "add",
 				Path: "/spec/volumes",
 				Value: []corev1.Volume{
 					volume,
 				},
-			},
+			}
 		}
+
+		patch = append(patch, volPatch)
 	}
 
 	patch = append(patch, patchOperation{
@@ -295,7 +301,8 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 		}
 	}
 
-	patchBytes, err := json.Marshal(m.updatePodSpec(&pod, podRole, audience))
+	patch := m.updatePodSpec(&pod, podRole, audience)
+	patchBytes, err := json.Marshal(patch)
 	if err != nil {
 		klog.Errorf("Error marshaling pod update: %v", err.Error())
 		return &v1beta1.AdmissionResponse{
