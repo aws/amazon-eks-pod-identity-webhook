@@ -90,6 +90,7 @@ delete-config:
 	kubectl delete -f deploy/service.yaml
 	kubectl delete -f deploy/deployment.yaml
 	kubectl delete -f deploy/auth.yaml
+	kubectl delete secret pod-identity-webhook
 
 clean::
 	rm -rf ./amazon-eks-pod-identity-webhook
