@@ -48,7 +48,7 @@ func main() {
 	kubeconfig := flag.String("kubeconfig", "", "(out-of-cluster) Absolute path to the API server kubeconfig file")
 	apiURL := flag.String("kube-api", "", "(out-of-cluster) The url to the API server")
 	tlsKeyFile := flag.String("tls-key", "/etc/webhook/certs/tls.key", "(out-of-cluster) TLS key file path")
-	tlsCertFile := flag.String("tls-cert", "/etc/webhook/certs/tls.cert", "(out-of-cluster) TLS certificate file path")
+	tlsCertFile := flag.String("tls-cert", "/etc/webhook/certs/tls.crt", "(out-of-cluster) TLS certificate file path")
 
 	// in-cluster TLS options
 	inCluster := flag.Bool("in-cluster", true, "Use in-cluster authentication and certificate request API")

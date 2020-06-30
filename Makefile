@@ -39,7 +39,7 @@ certs/tls.key:
 		-x509 \
 		-newkey rsa:2048 \
 		-keyout certs/tls.key \
-		-out certs/tls.cert \
+		-out certs/tls.crt \
 		-days 365 \
 		-nodes \
 		-subj "/CN=127.0.0.1"
@@ -49,7 +49,7 @@ local-serve: amazon-eks-pod-identity-webhook certs/tls.key
 		--port 8443 \
 		--in-cluster=false \
 		--tls-key=./certs/tls.key \
-		--tls-cert=./certs/tls.cert \
+		--tls-cert=./certs/tls.crt \
 		--kubeconfig=$$HOME/.kube/config
 
 local-request:
