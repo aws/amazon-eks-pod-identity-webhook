@@ -125,7 +125,7 @@ Usage of amazon-eks-pod-identity-webhook:
       --skip_headers                     If true, avoid header prefixes in the log messages
       --skip_log_headers                 If true, avoid headers when openning log files
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
-      --tls-cert string                  (out-of-cluster) TLS certificate file path (default "/etc/webhook/certs/tls.cert")
+      --tls-cert string                  (out-of-cluster) TLS certificate file path (default "/etc/webhook/certs/tls.crt")
       --tls-key string                   (out-of-cluster) TLS key file path (default "/etc/webhook/certs/tls.key")
       --tls-secret string                (in-cluster) The secret name for storing the TLS serving cert (default "pod-identity-webhook")
       --token-audience string            The default audience for tokens. Can be overridden by annotation (default "sts.amazonaws.com")
