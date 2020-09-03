@@ -16,12 +16,14 @@
 package cache
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
@@ -118,7 +120,19 @@ func New(defaultAudience, prefix string, clientset kubernetes.Interface) Service
 				c.addSA(sa)
 			},
 			DeleteFunc: func(obj interface{}) {
-				sa := obj.(*v1.ServiceAccount)
+				sa, ok := obj.(*v1.ServiceAccount)
+				if !ok {
+					tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+					if !ok {
+						utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %+v", obj))
+						return
+					}
+					sa, ok = tombstone.Obj.(*v1.ServiceAccount)
+					if !ok {
+						utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a ServiceAccount %#v", obj))
+						return
+					}
+				}
 				c.pop(sa.Name, sa.Namespace)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
