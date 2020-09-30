@@ -1,3 +1,5 @@
+![build](https://github.com/aws/amazon-eks-pod-identity-webhook/workflows/build/badge.svg)
+
 # Amazon EKS Pod Identity Webhook
 
 This webhook is for mutating pods that will require AWS IAM access.
@@ -141,6 +143,10 @@ Usage of amazon-eks-pod-identity-webhook:
 When the `aws-default-region` flag is set this webhook will inject `AWS_DEFAULT_REGION` and `AWS_REGION` in mutated containers if `AWS_DEFAULT_REGION` and `AWS_REGION` are not already set.
 
 
+## Container Images
+
+Container images for amazon-eks-pod-identity-webhook can be found on [Docker Hub](https://hub.docker.com/r/amazon/amazon-eks-pod-identity-webhook).
+
 ## Installation
 
 ### In-cluster
@@ -148,7 +154,7 @@ When the `aws-default-region` flag is set this webhook will inject `AWS_DEFAULT_
 You can use the provided configuration files in the `deploy` directory, along with the provided `Makefile`
 
 ```
-make cluster-up IMAGE=602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pod-identity-webhook:latest
+make cluster-up IMAGE=amazon/amazon-eks-pod-identity-webhook:2db5e53
 ```
 
 This will:
