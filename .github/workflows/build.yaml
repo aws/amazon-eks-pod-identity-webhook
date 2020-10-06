@@ -1,4 +1,4 @@
-name: Container Images
+name: build
 
 on: push
 jobs:
@@ -33,7 +33,7 @@ jobs:
               --push .
         if [ "$BRANCH" = "master" ]; then
           docker buildx build \
-                -t $REPO:master \
+                -t $REPO:latest \
                 --platform=linux/amd64,linux/arm64 \
                 --progress plain \
                 --push .
