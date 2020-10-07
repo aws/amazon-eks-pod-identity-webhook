@@ -338,6 +338,75 @@ var rawPodWithAWSDefaultRegion = []byte(`
 }
 `)
 
+var rawPodWithoutFSGroup = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos"
+	  }
+	],
+	"serviceAccountName": "fsgroup"
+  }
+}
+`)
+
+var rawPodWithFSGroup = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos"
+	  }
+	],
+    "securityContext": {
+      "fsGroup": 54321
+    },
+	"serviceAccountName": "fsgroup"
+  }
+}
+`)
+
+var rawPodWithFSGroupAnnotation = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "annotations": {
+      "eks.amazonaws.com/fs-group": "33333"
+    },
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos"
+	  }
+	],
+    "securityContext": {
+      "runAsUser": 2000
+    },
+	"serviceAccountName": "fsgroup"
+  }
+}
+`)
+
 func getValidReview(pod []byte) *v1beta1.AdmissionReview {
 	return &v1beta1.AdmissionReview{
 		Request: &v1beta1.AdmissionRequest{
@@ -375,6 +444,10 @@ var validPatchIfNoRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","v
 var validPatchIfRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_REGION","value":"paris"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 var validPatchIfDefaultRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"paris"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 var validPatchIfInitContainerPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]},{"op":"add","path":"/spec/initContainers","value":[{"name":"initcontainer","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+
+var validPatchIfNoFSGroupPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]},{"op":"add","path":"/spec/securityContext","value":{"fsGroup":12345}}]`)
+var validPatchIfFSGroupPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+var validPatchIfFSGroupAnnotationPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]},{"op":"add","path":"/spec/securityContext","value":{"runAsUser":2000,"fsGroup":33333}}]`)
 
 var jsonPatchType = v1beta1.PatchType("JSONPatch")
 
@@ -445,6 +518,27 @@ var validResponseIfInitContainerPresent = &v1beta1.AdmissionResponse{
 	UID:       "",
 	Allowed:   true,
 	Patch:     validPatchIfInitContainerPresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfNoFSGroupPresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfNoFSGroupPresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfFSGroupPresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfFSGroupPresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfFSGroupAnnotationPresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfFSGroupAnnotationPresent,
 	PatchType: &jsonPatchType,
 }
 
@@ -575,6 +669,55 @@ func TestEnvUpdate(t *testing.T) {
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
 			getValidReview(rawPodWithInitContainer),
 			validResponseIfInitContainerPresent,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.caseName, func(t *testing.T) {
+			response := c.modifier.MutatePod(c.input)
+
+			if !reflect.DeepEqual(response, c.response) {
+				got, _ := json.MarshalIndent(response, "", "  ")
+				want, _ := json.MarshalIndent(c.response, "", "  ")
+				t.Errorf("Unexpected response. Got \n%s\n wanted \n%s", string(got), string(want))
+			}
+
+		})
+	}
+}
+
+func TestFSGroupUpdate(t *testing.T) {
+	testServiceAccount := &v1.ServiceAccount{}
+	testServiceAccount.Name = "fsgroup"
+	testServiceAccount.Namespace = "default"
+	testServiceAccount.Annotations = map[string]string{
+		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
+		"eks.amazonaws.com/fs-group": "12345",
+	}
+
+	cases := []struct {
+		caseName string
+		modifier *Modifier
+		input    *v1beta1.AdmissionReview
+		response *v1beta1.AdmissionResponse
+	}{
+		{
+			"ValidRequestSuccessWithoutFSGroup",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
+			getValidReview(rawPodWithoutFSGroup),
+			validResponseIfNoFSGroupPresent,
+		},
+		{
+			"ValidRequestSuccessWithFSGroup",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
+			getValidReview(rawPodWithFSGroup),
+			validResponseIfFSGroupPresent,
+		},
+		{
+			"ValidRequestSuccessWithFSGroupAnnotation",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount))),
+			getValidReview(rawPodWithFSGroupAnnotation),
+			validResponseIfFSGroupAnnotationPresent,
 		},
 	}
 

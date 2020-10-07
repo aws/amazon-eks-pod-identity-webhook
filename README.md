@@ -49,7 +49,12 @@ This webhook is for mutating pods that will require AWS IAM access.
       annotations:
         eks.amazonaws.com/role-arn: "arn:aws:iam::111122223333:role/s3-reader"
     ```
-4. All new pod pods launched using this Service Account will be modified to use
+4. Optionally, add the `eks.amazonaws.com/fs-group` annotation to the service
+   account or to the pod's annotations with an integer GID. This will add a
+   `PodSecurityPolicy` with that GID as the `fsGroup` to applicable pods. This
+   is necessary for non-root containers to access the projected service account
+   token which will be owned by root with 0600 permissions.
+5. All new pod pods launched using this Service Account will be modified to use
    IAM for pods. Below is an example pod spec with the environment variables and
    volume fields added by the webhook.
     ```yaml

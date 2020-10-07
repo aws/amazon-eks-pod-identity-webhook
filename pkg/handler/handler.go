@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
@@ -69,14 +70,20 @@ func WithRegion(region string) ModifierOpt {
 	return func(m *Modifier) { m.Region = region }
 }
 
+// WithAnnotationPrefix sets the pod annotation prefix
+func WithAnnotationPrefix(prefix string) ModifierOpt {
+	return func(m *Modifier) { m.AnnotationPrefix = prefix }
+}
+
 // NewModifier returns a Modifier with default values
 func NewModifier(opts ...ModifierOpt) *Modifier {
 
 	mod := &Modifier{
-		MountPath:  "/var/run/secrets/eks.amazonaws.com/serviceaccount",
-		Expiration: 86400,
-		volName:    "aws-iam-token",
-		tokenName:  "token",
+		AnnotationPrefix: "eks.amazonaws.com",
+		MountPath:        "/var/run/secrets/eks.amazonaws.com/serviceaccount",
+		Expiration:       86400,
+		volName:          "aws-iam-token",
+		tokenName:        "token",
 	}
 	for _, opt := range opts {
 		opt(mod)
@@ -87,12 +94,13 @@ func NewModifier(opts ...ModifierOpt) *Modifier {
 
 // Modifier holds configuration values for pod modifications
 type Modifier struct {
-	Expiration int64
-	MountPath  string
-	Region     string
-	Cache      cache.ServiceAccountCache
-	volName    string
-	tokenName  string
+	AnnotationPrefix string
+	Expiration       int64
+	MountPath        string
+	Region           string
+	Cache            cache.ServiceAccountCache
+	volName          string
+	tokenName        string
 }
 
 type patchOperation struct {
@@ -176,7 +184,40 @@ func addEnvToContainer(container *corev1.Container, mountPath, tokenFilePath, vo
 	}
 }
 
-func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []patchOperation {
+// addFSGroupToPod adds an `fsGroup` to the PodSecurityContext and returns the
+// `corev1.PodSecurityContext` to use in a patch OR nil if no patch is needed.
+func (m *Modifier) addFSGroupToPod(pod *corev1.Pod, fsGroup *int64) *corev1.PodSecurityContext {
+	// Any `fs-group` annotations on a pod takes precedence over a
+	// ServiceAccount `fs-group` annotation
+	if fsgStr, ok := pod.Annotations[m.AnnotationPrefix+"/fs-group"]; ok {
+		if fsgInt, err := strconv.ParseInt(fsgStr, 10, 64); err == nil {
+			fsGroup = &fsgInt
+		}
+	}
+
+	// Don't patch if an fsGroup isn't set via an annotation
+	if fsGroup == nil {
+		return nil
+	}
+
+	// If a PodSecurityContext exists, only add fsGroup if one isn't set.
+	sc := pod.Spec.SecurityContext
+	if sc != nil {
+		if sc.FSGroup == nil {
+			sc.FSGroup = fsGroup
+			return sc
+		}
+		return nil
+	}
+
+	// Otherwise, add a new PodSecurityContext with our fsGroup.
+	pod.Spec.SecurityContext = &corev1.PodSecurityContext{
+		FSGroup: fsGroup,
+	}
+	return pod.Spec.SecurityContext
+}
+
+func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, fsGroup *int64) []patchOperation {
 	tokenFilePath := filepath.Join(m.MountPath, m.tokenName)
 
 	betaNodeSelector, _ := pod.Spec.NodeSelector["beta.kubernetes.io/os"]
@@ -217,6 +258,8 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []p
 			},
 		},
 	}
+
+	securityContext := m.addFSGroupToPod(pod, fsGroup)
 
 	patch := []patchOperation{}
 
@@ -261,6 +304,15 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string) []p
 			Value: initContainers,
 		})
 	}
+
+	if securityContext != nil {
+		patch = append(patch, patchOperation{
+			Op:    "add",
+			Path:  "/spec/securityContext",
+			Value: securityContext,
+		})
+	}
+
 	return patch
 }
 
@@ -292,7 +344,7 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 
 	pod.Namespace = req.Namespace
 
-	podRole, audience := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
+	podRole, audience, fsGroup := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
 
 	// determine whether to perform mutation
 	if podRole == "" {
@@ -301,7 +353,7 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 		}
 	}
 
-	patch := m.updatePodSpec(&pod, podRole, audience)
+	patch := m.updatePodSpec(&pod, podRole, audience, fsGroup)
 	patchBytes, err := json.Marshal(patch)
 	if err != nil {
 		klog.Errorf("Error marshaling pod update: %v", err.Error())

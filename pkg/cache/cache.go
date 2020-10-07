@@ -17,6 +17,7 @@ package cache
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -32,11 +33,12 @@ import (
 type CacheResponse struct {
 	RoleARN  string
 	Audience string
+	FSGroup  *int64
 }
 
 type ServiceAccountCache interface {
 	Start()
-	Get(name, namespace string) (role, aud string)
+	Get(name, namespace string) (role, aud string, fsGroup *int64)
 }
 
 type serviceAccountCache struct {
@@ -49,13 +51,18 @@ type serviceAccountCache struct {
 	defaultAudience  string
 }
 
-func (c *serviceAccountCache) Get(name, namespace string) (role, aud string) {
+func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, fsGroup *int64) {
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	resp := c.get(name, namespace)
 	if resp == nil {
-		return "", ""
+		return "", "", nil
 	}
-	return resp.RoleARN, resp.Audience
+	// Immutable safety for the fsGroup *int64 in the cache
+	if resp.FSGroup != nil {
+		fsGroup = new(int64)
+		*fsGroup = *resp.FSGroup
+	}
+	return resp.RoleARN, resp.Audience, fsGroup
 }
 
 func (c *serviceAccountCache) get(name, namespace string) *CacheResponse {
@@ -84,6 +91,11 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 			resp.Audience = audience
 		} else {
 			resp.Audience = c.defaultAudience
+		}
+		if fsgStr, ok := sa.Annotations[c.annotationPrefix+"/fs-group"]; ok {
+			if fsgInt, err := strconv.ParseInt(fsgStr, 10, 64); err == nil {
+				resp.FSGroup = &fsgInt
+			}
 		}
 	}
 	klog.V(5).Infof("Adding sa %s/%s to cache", sa.Name, sa.Namespace)

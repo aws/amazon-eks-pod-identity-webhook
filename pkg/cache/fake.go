@@ -1,8 +1,10 @@
 package cache
 
 import (
-	"k8s.io/api/core/v1"
+	"strconv"
 	"sync"
+
+	"k8s.io/api/core/v1"
 )
 
 // FakeServiceAccountCache is a goroutine safe cache for testing
@@ -21,8 +23,14 @@ func NewFakeServiceAccountCache(accounts ...*v1.ServiceAccount) *FakeServiceAcco
 		if !ok {
 			audience = "sts.amazonaws.com"
 		}
+		var fsGroup *int64
+		if fsgStr, ok := sa.Annotations["eks.amazonaws.com/fs-group"]; ok {
+			if fsgInt, err := strconv.ParseInt(fsgStr, 10, 64); err == nil {
+				fsGroup = &fsgInt
+			}
+		}
 
-		c.Add(sa.Name, sa.Namespace, arn, audience)
+		c.Add(sa.Name, sa.Namespace, arn, audience, fsGroup)
 	}
 	return c
 }
@@ -33,23 +41,29 @@ var _ ServiceAccountCache = &FakeServiceAccountCache{}
 func (f *FakeServiceAccountCache) Start() {}
 
 // Get gets a service account from the cache
-func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string) {
+func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string, fsGroup *int64) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	resp, ok := f.cache[namespace+"/"+name]
 	if !ok {
-		return "", ""
+		return "", "", nil
 	}
-	return resp.RoleARN, resp.Audience
+	// Immutable safety for the fsGroup *int64 in the cache
+	if resp.FSGroup != nil {
+		fsGroup = new(int64)
+		*fsGroup = *resp.FSGroup
+	}
+	return resp.RoleARN, resp.Audience, fsGroup
 }
 
 // Add adds a cache entry
-func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string) {
+func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string, fsGroup *int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cache[namespace+"/"+name] = &CacheResponse{
 		RoleARN:  role,
 		Audience: aud,
+		FSGroup:  fsGroup,
 	}
 }
 

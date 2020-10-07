@@ -101,6 +101,7 @@ func main() {
 	saCache.Start()
 
 	mod := handler.NewModifier(
+		handler.WithAnnotationPrefix(*annotationPrefix),
 		handler.WithExpiration(*tokenExpiration),
 		handler.WithMountPath(*mountPath),
 		handler.WithServiceAccountCache(saCache),
@@ -123,7 +124,6 @@ func main() {
 	metricsMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "ok")
 	})
-
 
 	tlsConfig := &tls.Config{}
 
@@ -180,8 +180,8 @@ func main() {
 	handler.ShutdownOnTerm(server, time.Duration(10)*time.Second)
 
 	metricsServer := &http.Server{
-		Addr:      metricsAddr,
-		Handler:   metricsMux,
+		Addr:    metricsAddr,
+		Handler: metricsMux,
 	}
 
 	go func() {
