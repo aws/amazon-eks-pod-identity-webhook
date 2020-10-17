@@ -85,7 +85,7 @@ This webhook is for mutating pods that will require AWS IAM access.
               expirationSeconds: 86400
               path: token
     ```
-   
+
 ### Usage with Windows container workloads
 
 To ensure workloads are scheduled on windows nodes have the right environment variables, they must have a `nodeSelector` targeting windows it must run on.  Workloads targeting windows nodes using `nodeAffinity` are currently not supported.
@@ -169,6 +169,124 @@ TODO
 
 ## Development
 TODO
+
+## Guides
+
+### Different roles in the same pod
+
+You can use different IAM roles in different containers within the same pod, but
+there is additional setup and configuration that you'll have to modify your pod
+spec by adding the volumes and environment variables without the help of this
+webhook.
+
+The way this works is by using different client IDs (also known as audience) in
+different tokens. Below is an example pod, but you'll probably use this on a
+Deployment, Daemonset, or some other controller type.
+
+First, you'll need to modify your IAM OIDC Identity Provider (IDP) to add an
+additional audience/client ID. In this example, the IDP will use the audiences
+`sts.amazonaws.com` and `some-other-client-id-arbitrary-string`.
+
+**Note**: _Containers in a pod share a common kernel, and containers are not a
+hard security boundary. Using different AWS IAM roles for containers in the same
+pod can be used to reduce unnecesary permissions and to reduce the blast-radius
+of misconfiguration, but should not be relied on to segment untrusted code in
+running in a container._
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+  namespace: default
+spec:
+  serviceAccountName: my-serviceaccount
+  containers:
+  - name: container1
+    image: container-image1
+    env:
+    - name: AWS_ROLE_ARN
+      value: "arn:aws:iam::111122223333:role/role-1"
+    - name: AWS_WEB_IDENTITY_TOKEN_FILE
+      value: "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
+    volumeMounts:
+    - mountPath: "/var/run/secrets/eks.amazonaws.com/serviceaccount/"
+      name: aws-token-1
+  - name: container2
+    image: container-image2
+    env:
+    - name: AWS_ROLE_ARN
+      value: "arn:aws:iam::111122223333:role/role-2"
+    - name: AWS_WEB_IDENTITY_TOKEN_FILE
+      value: "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
+    volumeMounts:
+    - mountPath: "/var/run/secrets/eks.amazonaws.com/serviceaccount/"
+      name: aws-token-2
+  volumes:
+  - name: aws-token-1
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: "sts.amazonaws.com"
+          expirationSeconds: 86400
+          path: token
+  - name: aws-token-2
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: "some-other-client-id-arbitrary-string"
+          expirationSeconds: 86400
+          path: token
+```
+
+Now for each role, you'll need to add a key to the `StringEquals` condition map
+in the role's trust policy specifying the proper audience (`aud`) for each role.
+
+`role-1` trust policy:
+
+```json
+{
+ "Version": "2012-10-17",
+ "Statement": [
+  {
+   "Effect": "Allow",
+   "Principal": {
+    "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/oidc.REGION.eks.amazonaws.com/CLUSTER_ID"
+   },
+   "Action": "sts:AssumeRoleWithWebIdentity",
+   "Condition": {
+    "StringEquals": {
+     "oidc.REGION.eks.amazonaws.com/CLUSTER_ID:sub": "system:serviceaccount:default:my-serviceaccount",
+     "oidc.REGION.eks.amazonaws.com/CLUSTER_ID:aud": "sts.amazonaws.com"
+    }
+   }
+  }
+ ]
+}
+```
+
+And `role-2` trust policy:
+
+```json
+{
+ "Version": "2012-10-17",
+ "Statement": [
+  {
+   "Effect": "Allow",
+   "Principal": {
+    "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/oidc.REGION.eks.amazonaws.com/CLUSTER_ID"
+   },
+   "Action": "sts:AssumeRoleWithWebIdentity",
+   "Condition": {
+    "StringEquals": {
+     "oidc.REGION.eks.amazonaws.com/CLUSTER_ID:sub": "system:serviceaccount:default:my-serviceaccount",
+     "oidc.REGION.eks.amazonaws.com/CLUSTER_ID:aud": "some-other-client-id-arbitrary-string"
+    }
+   }
+  }
+ ]
+}
+```
 
 ## Code of Conduct
 See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
