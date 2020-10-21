@@ -121,6 +121,99 @@ var rawPodWithVolume = []byte(`
 }
 `)
 
+var rawPodWithInitContainer = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos"
+	  }
+	],
+	"initContainers": [
+	  {
+		"image": "amazonlinux",
+		"name": "initcontainer"
+	  }
+	],
+	"serviceAccountName": "default"
+  }
+}
+`)
+
+var rawPodWithIAMTokenVolume = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos"
+	  }
+	],
+	"serviceAccountName": "default",
+	"volumes": [
+	  {
+	    "name": "aws-iam-token"
+	  }
+	]
+  }
+}
+`)
+
+var rawPodWithIAMTokenVolumeAndVolumeMount = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+	"name": "balajilovesoreos",
+	"uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+	"containers": [
+	  {
+		"image": "amazonlinux",
+		"name": "balajilovesoreos",
+		"env": [
+			{
+				"name": "AWS_ROLE_ARN",
+				"value": "arn:aws:iam::111122223333:role/s3-reader"
+			},
+			{
+				"name": "AWS_WEB_IDENTITY_TOKEN_FILE",
+				"value": "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
+			}
+		],
+		"volumeMounts": [
+			{
+				"mountPath": "/var/run/secrets/eks.amazonaws.com/serviceaccount",
+				"name": "aws-iam-token",
+				"readOnly": true
+			}
+		]
+	  }
+	],
+	"serviceAccountName": "default",
+	"volumes": [
+	  {
+	    "name": "aws-iam-token"
+	  }
+	]
+  }
+}
+`)
+
 var rawWindowsBetaPodWithVolume = []byte(`
 {
   "apiVersion": "v1",
@@ -272,12 +365,16 @@ func getValidReview(pod []byte) *v1beta1.AdmissionReview {
 var validPatchIfNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 var validPatchIfVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes/0","value":{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 
+var validPatchIfIAMTokenVolumePresent = []byte(`[{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+var validPatchIfIAMTokenVolumeAndVolumeMountPresent = []byte(`[{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"},{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+
 var validPatchIfWindowsNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"C:\\var\\run\\secrets\\eks.amazonaws.com\\serviceaccount\\token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 var validPatchIfWindowsVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes/0","value":{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"C:\\var\\run\\secrets\\eks.amazonaws.com\\serviceaccount\\token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 
 var validPatchIfNoRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 var validPatchIfRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_REGION","value":"paris"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 var validPatchIfDefaultRegionPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"paris"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+var validPatchIfInitContainerPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]},{"op":"add","path":"/spec/initContainers","value":[{"name":"initcontainer","image":"amazonlinux","env":[{"name":"AWS_DEFAULT_REGION","value":"seattle"},{"name":"AWS_REGION","value":"seattle"},{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 
 var jsonPatchType = v1beta1.PatchType("JSONPatch")
 
@@ -292,6 +389,20 @@ var validResponseIfVolumesPresent = &v1beta1.AdmissionResponse{
 	UID:       "",
 	Allowed:   true,
 	Patch:     validPatchIfVolumesPresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfIAMTokenVolumePresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfIAMTokenVolumePresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfIAMTokenVolumeAndVolumeMountPresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfIAMTokenVolumeAndVolumeMountPresent,
 	PatchType: &jsonPatchType,
 }
 
@@ -327,6 +438,13 @@ var validResponseIfDefaultRegionPresent = &v1beta1.AdmissionResponse{
 	UID:       "",
 	Allowed:   true,
 	Patch:     validPatchIfDefaultRegionPresent,
+	PatchType: &jsonPatchType,
+}
+
+var validResponseIfInitContainerPresent = &v1beta1.AdmissionResponse{
+	UID:       "",
+	Allowed:   true,
+	Patch:     validPatchIfInitContainerPresent,
 	PatchType: &jsonPatchType,
 }
 
@@ -439,6 +557,24 @@ func TestEnvUpdate(t *testing.T) {
 			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
 			getValidReview(rawPodWithAWSDefaultRegion),
 			validResponseIfDefaultRegionPresent,
+		},
+		{
+			"ValidRequestSuccessWithIAMTokenVolumePresent",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
+			getValidReview(rawPodWithIAMTokenVolume),
+			validResponseIfIAMTokenVolumePresent,
+		},
+		{
+			"ValidRequestSuccessWithIAMTokenVolumeAndVolumeMountPresent",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
+			getValidReview(rawPodWithIAMTokenVolumeAndVolumeMount),
+			validResponseIfIAMTokenVolumeAndVolumeMountPresent,
+		},
+		{
+			"ValidRequestSuccessWithInitContainer",
+			NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)), WithRegion("seattle")),
+			getValidReview(rawPodWithInitContainer),
+			validResponseIfInitContainerPresent,
 		},
 	}
 
