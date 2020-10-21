@@ -200,6 +200,7 @@ func main() {
 		Addr:      metricsAddr,
 		Handler:   metricsMux,
 	}
+	handler.ShutdownOnTerm(metricsServer, time.Duration(10)*time.Second)
 
 	go func() {
 		klog.Infof("Listening on %s", addr)
