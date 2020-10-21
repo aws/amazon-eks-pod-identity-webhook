@@ -54,7 +54,8 @@ func main() {
 	inCluster := flag.Bool("in-cluster", true, "Use in-cluster authentication and certificate request API")
 	serviceName := flag.String("service-name", "pod-identity-webhook", "(in-cluster) The service name fronting this webhook")
 	namespaceName := flag.String("namespace", "eks", "(in-cluster) The namespace name this webhook and the tls secret resides in")
-	tlsSecret := flag.String("tls-secret", "pod-identity-webhook", "(in-cluster) The secret name for storing the TLS serving cert")
+	tlsSecret := flag.String("tls-secret", "pod-identity-webhook", "(in-cluster) The secret name for storing/reading the TLS serving cert")
+	externalRenewal := flag.Bool("external-tls-renewal", false, "Only read (and watch) external TLS secret (from file or cluster secret), do not attempt renewal")
 
 	// annotation/volume configurations
 	annotationPrefix := flag.String("annotation-prefix", "eks.amazonaws.com", "The Service Account annotation to look for")
@@ -127,7 +128,7 @@ func main() {
 
 	tlsConfig := &tls.Config{}
 
-	if *inCluster {
+	if *inCluster && !*externalRenewal {
 		csr := &x509.CertificateRequest{
 			Subject: pkix.Name{CommonName: fmt.Sprintf("%s.%s.svc", *serviceName, *namespaceName)},
 			/*
@@ -164,11 +165,27 @@ func main() {
 			return certificate, nil
 		}
 	} else {
-		certificate, err := tls.LoadX509KeyPair(*tlsCertFile, *tlsKeyFile)
+		var certWatcher cert.CertWatcher
+		if *inCluster {
+			certWatcher, err = cert.NewSecretStoreCertWatcher(clientset, *namespaceName, *tlsSecret)
+		} else {
+			certWatcher, err = cert.NewFileCertWatcher(*tlsCertFile, *tlsKeyFile)
+		}
+
 		if err != nil {
 			klog.Fatalf("failed to load TLS cert and key: %v", err)
 		}
-		tlsConfig.Certificates = []tls.Certificate{certificate}
+
+		certWatcher.Start()
+		defer certWatcher.Stop()
+
+		tlsConfig.GetCertificate = func(info *tls.ClientHelloInfo) (certificate *tls.Certificate, err error) {
+			certificate = certWatcher.Current()
+			if certificate == nil {
+				return nil, fmt.Errorf("no serving certificate available for the webhook, external cert not renewed?")
+			}
+			return certificate, nil
+		}
 	}
 
 	klog.Info("Creating server")
