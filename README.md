@@ -106,6 +106,10 @@ Or for Kubernetes 1.14+
 [1]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html
 [2]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-idp_oidc.html
 
+### Usage with non-root container user
+
+When running a container with a non-root user, you need to give the container access to the token file by setting the `fsGroup` field in the `securityContext` object.
+
 ## Usage
 
 ```
