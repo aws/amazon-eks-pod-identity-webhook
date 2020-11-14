@@ -144,6 +144,19 @@ type patchOperation struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
+func logContext(podName, podGenerateName, serviceAccountName, namespace string) string {
+	name := podName
+	if len(podName) == 0 {
+		name = podGenerateName
+	}
+	return fmt.Sprintf("Pod=%s, " +
+		"ServiceAccount=%s, " +
+		"Namespace=%s",
+		name,
+		serviceAccountName,
+		namespace)
+}
+
 func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath, roleName string, podSettings *podUpdateSettings) {
 	// return if this is a named skipped container
 	if _, ok := podSettings.skipContainers[container.Name]; ok {
@@ -360,6 +373,8 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 
 	// determine whether to perform mutation
 	if podRole == "" {
+		klog.V(3).Infof("Pod was not mutated. %s",
+			logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
 		return &v1beta1.AdmissionResponse{
 			Allowed: true,
 		}
@@ -375,6 +390,8 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 		}
 	}
 
+	klog.V(3).Infof("Pod was mutated. %s",
+		logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
 	return &v1beta1.AdmissionResponse{
 		Allowed: true,
 		Patch:   patchBytes,

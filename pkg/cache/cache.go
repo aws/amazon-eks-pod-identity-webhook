@@ -16,6 +16,7 @@
 package cache
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"sync"
@@ -40,6 +41,8 @@ type CacheResponse struct {
 type ServiceAccountCache interface {
 	Start()
 	Get(name, namespace string) (role, aud string, useRegionalSTS bool)
+	// ToJSON returns cache contents as JSON string
+	ToJSON() string
 }
 
 type serviceAccountCache struct {
@@ -77,6 +80,18 @@ func (c *serviceAccountCache) pop(name, namespace string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.cache, namespace+"/"+name)
+}
+
+// Log cache contents for debugginqg
+func (c *serviceAccountCache) ToJSON() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	contents, err := json.MarshalIndent(c.cache, "", " ")
+	if err != nil {
+		klog.Errorf("Json marshal error: %v", err.Error())
+		return ""
+	}
+	return string(contents)
 }
 
 func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
