@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"encoding/json"
 	"k8s.io/api/core/v1"
 	"strconv"
 	"sync"
@@ -62,4 +63,14 @@ func (f *FakeServiceAccountCache) Pop(name, namespace string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.cache, namespace+"/"+name)
+}
+
+func (f *FakeServiceAccountCache) ToJSON() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	contents, err := json.MarshalIndent(f.cache, "", " ")
+	if err != nil {
+		return ""
+	}
+	return string(contents)
 }

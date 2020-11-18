@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
+	cachedebug "github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache/debug"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cert"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/handler"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -65,6 +66,8 @@ func main() {
 	regionalSTS := flag.Bool("sts-regional-endpoint", false, "Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to `false`.")
 
 	version := flag.Bool("version", false, "Display the version and exit")
+
+	debug := flag.Bool("enable-debugging-handlers", false, "Enable debugging handlers. Currently /debug/alpha/cache is supported")
 
 	klog.InitFlags(goflag.CommandLine)
 	// Add klog CommandLine flags to pflag CommandLine
@@ -127,6 +130,16 @@ func main() {
 	metricsMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "ok")
 	})
+
+	// Register debug endpoint only if flag is enabled
+	if *debug {
+		debugger := cachedebug.Dumper{
+			Cache: saCache,
+		}
+		// Reuse metrics port to avoid exposing a new port
+		metricsMux.HandleFunc("/debug/alpha/cache", debugger.Handle)
+		// Expose other debug paths
+	}
 
 	tlsConfig := &tls.Config{}
 
