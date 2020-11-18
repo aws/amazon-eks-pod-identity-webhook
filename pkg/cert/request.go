@@ -39,14 +39,14 @@ func NewServerCertificateManager(kubeClient clientset.Interface, namespace, secr
 		kubeClient,
 	)
 
-	var certificateExpiration = prometheus.NewGauge(
-		prometheus.GaugeOpts{
+	var certificateRotation = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
 			Subsystem: "certificate_manager",
 			Name:      "server_expiration_seconds",
-			Help:      "Gauge of the lifetime of a certificate. The value is the date the certificate will expire in seconds since January 1, 1970 UTC.",
+			Help:      "Histogram of the lifetime of a certificate. The value is the date the certificate will expire in seconds since January 1, 1970 UTC.",
 		},
 	)
-	prometheus.MustRegister(certificateExpiration)
+	prometheus.MustRegister(certificateRotation)
 
 	m, err := certificate.NewManager(&certificate.Config{
 		ClientFn: clientFn,
@@ -65,8 +65,8 @@ func NewServerCertificateManager(kubeClient clientset.Interface, namespace, secr
 			// authenticate itself to a TLS client.
 			certificates.UsageServerAuth,
 		},
-		CertificateStore:      certificateStore,
-		CertificateExpiration: certificateExpiration,
+		CertificateStore:    certificateStore,
+		CertificateRotation: certificateRotation,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize server certificate manager: %v", err)

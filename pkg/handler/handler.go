@@ -33,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/apis/core/v1"
 )
 
 type podUpdateSettings struct {
@@ -67,7 +66,6 @@ func newPodUpdateSettings(annotationDomain string, pod *corev1.Pod, useRegionalS
 func init() {
 	_ = corev1.AddToScheme(runtimeScheme)
 	_ = admissionregistrationv1beta1.AddToScheme(runtimeScheme)
-	_ = v1.AddToScheme(runtimeScheme)
 }
 
 var (
