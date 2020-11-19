@@ -147,18 +147,19 @@ func logContext(podName, podGenerateName, serviceAccountName, namespace string) 
 	if len(podName) == 0 {
 		name = podGenerateName
 	}
-	return fmt.Sprintf("Pod=%s, " +
-		"ServiceAccount=%s, " +
+	return fmt.Sprintf("Pod=%s, "+
+		"ServiceAccount=%s, "+
 		"Namespace=%s",
 		name,
 		serviceAccountName,
 		namespace)
 }
 
-func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath, roleName string, podSettings *podUpdateSettings) {
+func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath, roleName string, podSettings *podUpdateSettings) bool {
 	// return if this is a named skipped container
 	if _, ok := podSettings.skipContainers[container.Name]; ok {
-		return
+		klog.V(4).Infof("Container %s was annotated to be skipped", container.Name)
+		return false
 	}
 
 	var (
@@ -189,9 +190,12 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 	}
 
 	if reservedKeysDefined && regionKeyDefined && regionalStsKeyDefined {
-		return
+		klog.V(4).Infof("Container %s has necessary env variables already present",
+			container.Name)
+		return false
 	}
 
+	changed := false
 	env := container.Env
 
 	if !regionalStsKeyDefined && m.RegionalSTSEndpoint && podSettings.useRegionalSTS {
@@ -201,6 +205,7 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 				Value: "regional",
 			},
 		)
+		changed = true
 	}
 
 	if !regionKeyDefined && m.Region != "" {
@@ -214,6 +219,7 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 				Value: m.Region,
 			},
 		)
+		changed = true
 	}
 
 	if !reservedKeysDefined {
@@ -226,6 +232,7 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 			Name:  "AWS_WEB_IDENTITY_TOKEN_FILE",
 			Value: tokenFilePath,
 		})
+		changed = true
 	}
 
 	container.Env = env
@@ -246,10 +253,12 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 				MountPath: m.MountPath,
 			},
 		)
+		changed = true
 	}
+	return changed
 }
 
-func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, regionalSTS bool) []patchOperation {
+func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, regionalSTS bool) ([]patchOperation, bool) {
 	updateSettings := newPodUpdateSettings(m.AnnotationDomain, pod, regionalSTS)
 
 	tokenFilePath := filepath.Join(m.MountPath, m.tokenName)
@@ -263,16 +272,17 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, reg
 		tokenFilePath = "C:" + strings.Replace(tokenFilePath, `/`, `\`, -1)
 	}
 
+	var changed bool
 	var initContainers = []corev1.Container{}
 	for i := range pod.Spec.InitContainers {
 		container := pod.Spec.InitContainers[i]
-		m.addEnvToContainer(&container, tokenFilePath, roleName, updateSettings)
+		changed = m.addEnvToContainer(&container, tokenFilePath, roleName, updateSettings)
 		initContainers = append(initContainers, container)
 	}
 	var containers = []corev1.Container{}
 	for i := range pod.Spec.Containers {
 		container := pod.Spec.Containers[i]
-		m.addEnvToContainer(&container, tokenFilePath, roleName, updateSettings)
+		changed = m.addEnvToContainer(&container, tokenFilePath, roleName, updateSettings)
 		containers = append(containers, container)
 	}
 
@@ -321,6 +331,7 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, reg
 		}
 
 		patch = append(patch, volPatch)
+		changed = true
 	}
 
 	patch = append(patch, patchOperation{
@@ -336,7 +347,7 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, reg
 			Value: initContainers,
 		})
 	}
-	return patch
+	return patch, changed
 }
 
 // MutatePod takes a AdmissionReview, mutates the pod, and returns an AdmissionResponse
@@ -371,14 +382,19 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 
 	// determine whether to perform mutation
 	if podRole == "" {
-		klog.V(3).Infof("Pod was not mutated. %s",
-			logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
+		klog.V(4).Infof("Pod was not mutated. Reason: "+
+			"Service account did not have the right annotations or was not found in the cache. %s",
+			logContext(pod.Name,
+				pod.GenerateName,
+				pod.Spec.ServiceAccountName,
+				pod.Namespace))
 		return &v1beta1.AdmissionResponse{
 			Allowed: true,
 		}
 	}
 
-	patchBytes, err := json.Marshal(m.updatePodSpec(&pod, podRole, audience, regionalSTS))
+	patch, changed := m.updatePodSpec(&pod, podRole, audience, regionalSTS)
+	patchBytes, err := json.Marshal(patch)
 	if err != nil {
 		klog.Errorf("Error marshaling pod update: %v", err.Error())
 		return &v1beta1.AdmissionResponse{
@@ -388,8 +404,16 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 		}
 	}
 
-	klog.V(3).Infof("Pod was mutated. %s",
-		logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
+	// TODO: klog structured logging can make this better
+	if changed {
+		klog.V(3).Infof("Pod was mutated. %s",
+			logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
+	} else {
+		klog.V(3).Infof("Pod was not mutated. Reason: "+
+			"Required volume mounts and env variables were already present. %s",
+			logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
+	}
+
 	return &v1beta1.AdmissionResponse{
 		Allowed: true,
 		Patch:   patchBytes,

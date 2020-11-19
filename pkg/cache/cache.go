@@ -60,6 +60,7 @@ func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, use
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	resp := c.get(name, namespace)
 	if resp == nil {
+		klog.V(4).Infof("Service account %s/%s not found in cache", namespace, name)
 		return "", "", false
 	}
 	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS
@@ -84,8 +85,8 @@ func (c *serviceAccountCache) pop(name, namespace string) {
 
 // Log cache contents for debugginqg
 func (c *serviceAccountCache) ToJSON() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	contents, err := json.MarshalIndent(c.cache, "", " ")
 	if err != nil {
 		klog.Errorf("Json marshal error: %v", err.Error())

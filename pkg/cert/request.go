@@ -42,8 +42,8 @@ func NewServerCertificateManager(kubeClient clientset.Interface, namespace, secr
 	var certificateRotation = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Subsystem: "certificate_manager",
-			Name:      "server_expiration_seconds",
-			Help:      "Histogram of the lifetime of a certificate. The value is the date the certificate will expire in seconds since January 1, 1970 UTC.",
+			Name:      "server_rotation_seconds",
+			Help:      "Histogram of the lifetime of a certificate. The value is the time in seconds the certificate lived before getting rotated",
 		},
 	)
 	prometheus.MustRegister(certificateRotation)
