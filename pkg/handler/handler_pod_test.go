@@ -120,7 +120,8 @@ func TestHandlePod(t *testing.T) {
 					}
 				}
 
-				patchBytes, err := json.Marshal(modifier.updatePodSpec(pod, roleARN, audience, useRegionalSTS))
+				patch, _ := modifier.updatePodSpec(pod, roleARN, audience, useRegionalSTS)
+				patchBytes, err := json.Marshal(patch)
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
 				}

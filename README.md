@@ -202,6 +202,10 @@ For self-hosted API server configuration, see see [SELF_HOSTED_SETUP.md](/SELF_H
 ### On API server
 TODO
 
+### Notes
+With the upgrade to client-go 1.18, certificate_manager_server_expiration_seconds metric has been removed by an upstream commit kubernetes/kubernetes#85874.
+A new metric certificate_manager_server_rotation_seconds is added which tracks the time a certificate was valid before getting rotated.
+
 ## Code of Conduct
 See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 

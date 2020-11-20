@@ -16,6 +16,7 @@
 package cert
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -47,6 +48,7 @@ func NewSecretCertStore(namespace, secretName string, clientset clientset.Interf
 
 func (s *secretCertStore) Current() (*tls.Certificate, error) {
 	secret, err := s.clientset.CoreV1().Secrets(s.namespace).Get(
+		context.TODO(),
 		s.secretName,
 		metav1.GetOptions{},
 	)
@@ -74,6 +76,7 @@ func (s *secretCertStore) Update(cert, key []byte) (*tls.Certificate, error) {
 	var secret *v1.Secret
 	var err error
 	secret, err = s.clientset.CoreV1().Secrets(s.namespace).Get(
+		context.TODO(),
 		s.secretName,
 		metav1.GetOptions{},
 	)
@@ -86,7 +89,7 @@ func (s *secretCertStore) Update(cert, key []byte) (*tls.Certificate, error) {
 			v1.TLSPrivateKeyKey: key,
 		}
 		secret.Type = v1.SecretTypeTLS
-		_, err = s.clientset.CoreV1().Secrets(s.namespace).Create(secret)
+		_, err = s.clientset.CoreV1().Secrets(s.namespace).Create(context.TODO(), secret, metav1.CreateOptions{})
 		if err != nil {
 			klog.Errorf("Error creating secret: %v", err.Error())
 			return nil, err
@@ -97,7 +100,7 @@ func (s *secretCertStore) Update(cert, key []byte) (*tls.Certificate, error) {
 		v1.TLSCertKey:       cert,
 		v1.TLSPrivateKeyKey: key,
 	}
-	_, err = s.clientset.CoreV1().Secrets(s.namespace).Update(secret)
+	_, err = s.clientset.CoreV1().Secrets(s.namespace).Update(context.TODO(), secret, metav1.UpdateOptions{})
 	if err != nil {
 		klog.Errorf("Error updating secret: %v", err.Error())
 		return nil, err
