@@ -140,6 +140,7 @@ Usage of amazon-eks-pod-identity-webhook:
       --alsologtostderr                  log to standard error as well as files
       --annotation-prefix string         The Service Account annotation to look for (default "eks.amazonaws.com")
       --aws-default-region string        If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers
+      --base-arn string                  The base arn to use if a non fully qualified role is detected
       --in-cluster                       Use in-cluster authentication and certificate request API (default true)
       --enable-debugging-handlers        Enable debugging handlers on the metrics port (http). Currently /debug/alpha/cache is supported (default false) [ALPHA]
       --kube-api string                  (out-of-cluster) The url to the API server

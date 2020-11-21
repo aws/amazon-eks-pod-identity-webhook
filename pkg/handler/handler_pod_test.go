@@ -49,6 +49,7 @@ var (
 	handlerExpirationAnnotation = "testing.eks.amazonaws.com/handler/expiration"
 	handlerRegionAnnotation     = "testing.eks.amazonaws.com/handler/region"
 	handlerSTSAnnotation        = "testing.eks.amazonaws.com/handler/injectSTS"
+	handlerBaseArnAnnotation    = "testing.eks.amazonaws.com/handler/baseArn"
 )
 
 func getModifierFromPod(pod corev1.Pod) (*Modifier, error) {
@@ -73,6 +74,9 @@ func getModifierFromPod(pod corev1.Pod) (*Modifier, error) {
 			return nil, err
 		}
 		modifiers = append(modifiers, WithRegionalSTS(value))
+	}
+	if baseArnAnnotation, ok := pod.Annotations[handlerBaseArnAnnotation]; ok {
+		modifiers = append(modifiers, WithBaseArn(baseArnAnnotation))
 	}
 	return NewModifier(modifiers...), nil
 }

@@ -61,6 +61,7 @@ func main() {
 	// annotation/volume configurations
 	annotationPrefix := flag.String("annotation-prefix", "eks.amazonaws.com", "The Service Account annotation to look for")
 	audience := flag.String("token-audience", "sts.amazonaws.com", "The default audience for tokens. Can be overridden by annotation")
+	baseArn := flag.String("base-arn", "", "The base arn to use if a non fully qualified role is detected")
 	mountPath := flag.String("token-mount-path", "/var/run/secrets/eks.amazonaws.com/serviceaccount", "The path to mount tokens")
 	tokenExpiration := flag.Int64("token-expiration", pkg.DefaultTokenExpiration, "The token expiration")
 	region := flag.String("aws-default-region", "", "If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers")
@@ -115,6 +116,7 @@ func main() {
 		handler.WithServiceAccountCache(saCache),
 		handler.WithRegion(*region),
 		handler.WithRegionalSTS(*regionalSTS),
+		handler.WithBaseArn(*baseArn),
 	)
 
 	addr := fmt.Sprintf(":%d", *port)
