@@ -74,6 +74,8 @@ var (
 	deserializer  = codecs.UniversalDeserializer()
 )
 
+const arnPrefix = "arn:"
+
 // ModifierOpt is an option type for setting up a Modifier
 type ModifierOpt func(*Modifier)
 
@@ -102,6 +104,11 @@ func WithRegionalSTS(enabled bool) ModifierOpt {
 	return func(m *Modifier) { m.RegionalSTSEndpoint = enabled }
 }
 
+// WithBaseArn sets the baseArn to use if we detect role name is not fully qualified
+func WithBaseArn(baseArn string) ModifierOpt {
+	return func(m *Modifier) { m.BaseArn = baseArn }
+}
+
 // WithAnnotationDomain adds an annotation domain
 func WithAnnotationDomain(domain string) ModifierOpt {
 	return func(m *Modifier) { m.AnnotationDomain = domain }
@@ -127,6 +134,7 @@ func NewModifier(opts ...ModifierOpt) *Modifier {
 // Modifier holds configuration values for pod modifications
 type Modifier struct {
 	AnnotationDomain    string
+	BaseArn             string
 	Expiration          int64
 	MountPath           string
 	Region              string
@@ -155,7 +163,7 @@ func logContext(podName, podGenerateName, serviceAccountName, namespace string) 
 		namespace)
 }
 
-func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath, roleName string, podSettings *podUpdateSettings) bool {
+func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath, fullRoleArn string, podSettings *podUpdateSettings) bool {
 	// return if this is a named skipped container
 	if _, ok := podSettings.skipContainers[container.Name]; ok {
 		klog.V(4).Infof("Container %s was annotated to be skipped", container.Name)
@@ -225,7 +233,7 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 	if !reservedKeysDefined {
 		env = append(env, corev1.EnvVar{
 			Name:  "AWS_ROLE_ARN",
-			Value: roleName,
+			Value: fullRoleArn,
 		})
 
 		env = append(env, corev1.EnvVar{
@@ -258,6 +266,14 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 	return changed
 }
 
+func (m *Modifier) fullRoleArn(arn string) string {
+	if strings.HasPrefix(arn, arnPrefix) {
+		return arn
+	}
+
+	return fmt.Sprintf("%s%s", m.BaseArn, arn)
+}
+
 func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, regionalSTS bool) ([]patchOperation, bool) {
 	updateSettings := newPodUpdateSettings(m.AnnotationDomain, pod, regionalSTS)
 
@@ -272,17 +288,19 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, reg
 		tokenFilePath = "C:" + strings.Replace(tokenFilePath, `/`, `\`, -1)
 	}
 
+	fullRoleArn := m.fullRoleArn(roleName)
+
 	var changed bool
 	var initContainers = []corev1.Container{}
 	for i := range pod.Spec.InitContainers {
 		container := pod.Spec.InitContainers[i]
-		changed = m.addEnvToContainer(&container, tokenFilePath, roleName, updateSettings)
+		changed = m.addEnvToContainer(&container, tokenFilePath, fullRoleArn, updateSettings)
 		initContainers = append(initContainers, container)
 	}
 	var containers = []corev1.Container{}
 	for i := range pod.Spec.Containers {
 		container := pod.Spec.Containers[i]
-		changed = m.addEnvToContainer(&container, tokenFilePath, roleName, updateSettings)
+		changed = m.addEnvToContainer(&container, tokenFilePath, fullRoleArn, updateSettings)
 		containers = append(containers, container)
 	}
 
