@@ -5,6 +5,8 @@ import (
 	"k8s.io/api/core/v1"
 	"strconv"
 	"sync"
+
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 )
 
 // FakeServiceAccountCache is a goroutine safe cache for testing
@@ -25,8 +27,13 @@ func NewFakeServiceAccountCache(accounts ...*v1.ServiceAccount) *FakeServiceAcco
 		}
 		regionalSTSstr, _ := sa.Annotations["eks.amazonaws.com/sts-regional-endpoints"]
 		regionalSTS, _ := strconv.ParseBool(regionalSTSstr)
+		tokenExpirationStr, _ := sa.Annotations["eks.amazonaws.com/token-expiration"]
+		tokenExpiration, err := strconv.ParseInt(tokenExpirationStr, 10, 64)
+		if err != nil {
+			tokenExpiration = pkg.DefaultTokenExpiration // Otherwise default would be 0
+		}
 
-		c.Add(sa.Name, sa.Namespace, arn, audience, regionalSTS)
+		c.Add(sa.Name, sa.Namespace, arn, audience, regionalSTS, tokenExpiration)
 	}
 	return c
 }
@@ -37,24 +44,25 @@ var _ ServiceAccountCache = &FakeServiceAccountCache{}
 func (f *FakeServiceAccountCache) Start() {}
 
 // Get gets a service account from the cache
-func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool) {
+func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	resp, ok := f.cache[namespace+"/"+name]
 	if !ok {
-		return "", "", false
+		return "", "", false, pkg.DefaultTokenExpiration
 	}
-	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS
+	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration
 }
 
 // Add adds a cache entry
-func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string, regionalSTS bool) {
+func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string, regionalSTS bool, tokenExpiration int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cache[namespace+"/"+name] = &CacheResponse{
-		RoleARN:        role,
-		Audience:       aud,
-		UseRegionalSTS: regionalSTS,
+		RoleARN:         role,
+		Audience:        aud,
+		UseRegionalSTS:  regionalSTS,
+		TokenExpiration: tokenExpiration,
 	}
 }
 

@@ -33,37 +33,39 @@ import (
 )
 
 type CacheResponse struct {
-	RoleARN        string
-	Audience       string
-	UseRegionalSTS bool
+	RoleARN         string
+	Audience        string
+	UseRegionalSTS  bool
+	TokenExpiration int64
 }
 
 type ServiceAccountCache interface {
 	Start()
-	Get(name, namespace string) (role, aud string, useRegionalSTS bool)
+	Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64)
 	// ToJSON returns cache contents as JSON string
 	ToJSON() string
 }
 
 type serviceAccountCache struct {
-	mu                 sync.RWMutex // guards cache
-	cache              map[string]*CacheResponse
-	store              cache.Store
-	controller         cache.Controller
-	clientset          kubernetes.Interface
-	annotationPrefix   string
-	defaultAudience    string
-	defaultRegionalSTS bool
+	mu                     sync.RWMutex // guards cache
+	cache                  map[string]*CacheResponse
+	store                  cache.Store
+	controller             cache.Controller
+	clientset              kubernetes.Interface
+	annotationPrefix       string
+	defaultAudience        string
+	defaultRegionalSTS     bool
+	defaultTokenExpiration int64
 }
 
-func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool) {
+func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	resp := c.get(name, namespace)
 	if resp == nil {
 		klog.V(4).Infof("Service account %s/%s not found in cache", namespace, name)
-		return "", "", false
+		return "", "", false, pkg.DefaultTokenExpiration
 	}
-	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS
+	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration
 }
 
 func (c *serviceAccountCache) get(name, namespace string) *CacheResponse {
@@ -114,6 +116,15 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 				resp.UseRegionalSTS = !disableRegional
 			}
 		}
+
+		resp.TokenExpiration = c.defaultTokenExpiration
+		if tokenExpirationStr, ok := sa.Annotations[c.annotationPrefix + "/" + pkg.TokenExpirationAnnotation]; ok {
+			if tokenExpiration, err := strconv.ParseInt(tokenExpirationStr, 10, 64); err != nil {
+				klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", resp.TokenExpiration, err)
+			} else {
+				resp.TokenExpiration = pkg.ValidateMinTokenExpiration(tokenExpiration)
+			}
+		}
 	}
 	klog.V(5).Infof("Adding sa %s/%s to cache", sa.Name, sa.Namespace)
 	c.set(sa.Name, sa.Namespace, resp)
@@ -125,12 +136,13 @@ func (c *serviceAccountCache) set(name, namespace string, resp *CacheResponse) {
 	c.cache[namespace+"/"+name] = resp
 }
 
-func New(defaultAudience, prefix string, defaultRegionalSTS bool, clientset kubernetes.Interface) ServiceAccountCache {
+func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenExpiration int64, clientset kubernetes.Interface) ServiceAccountCache {
 	c := &serviceAccountCache{
-		cache:              map[string]*CacheResponse{},
-		defaultAudience:    defaultAudience,
-		annotationPrefix:   prefix,
-		defaultRegionalSTS: defaultRegionalSTS,
+		cache:                  map[string]*CacheResponse{},
+		defaultAudience:        defaultAudience,
+		annotationPrefix:       prefix,
+		defaultRegionalSTS:     defaultRegionalSTS,
+		defaultTokenExpiration: defaultTokenExpiration,
 	}
 
 	saListWatcher := cache.NewListWatchFromClient(

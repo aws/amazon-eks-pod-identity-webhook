@@ -14,6 +14,7 @@ func TestSaCache(t *testing.T) {
 	testSA.Annotations = map[string]string{
 		"eks.amazonaws.com/role-arn":               roleArn,
 		"eks.amazonaws.com/sts-regional-endpoints": "true",
+		"eks.amazonaws.com/token-expiration":       "3600",
 	}
 
 	cache := &serviceAccountCache{
@@ -22,15 +23,15 @@ func TestSaCache(t *testing.T) {
 		annotationPrefix: "eks.amazonaws.com",
 	}
 
-	role, aud, useRegionalSTS := cache.Get("default", "default")
+	role, aud, useRegionalSTS, tokenExpiration := cache.Get("default", "default")
 
 	if role != "" || aud != "" {
-		t.Errorf("Expected role and aud to be empty, got %s, %s, %t", role, aud, useRegionalSTS)
+		t.Errorf("Expected role and aud to be empty, got %s, %s, %t, %d", role, aud, useRegionalSTS, tokenExpiration)
 	}
 
 	cache.addSA(testSA)
 
-	role, aud, useRegionalSTS = cache.Get("default", "default")
+	role, aud, useRegionalSTS, tokenExpiration = cache.Get("default", "default")
 	if role != roleArn {
 		t.Errorf("Expected role to be %s, got %s", roleArn, role)
 	}
@@ -39,5 +40,8 @@ func TestSaCache(t *testing.T) {
 	}
 	if useRegionalSTS {
 		t.Error("Expected regional STS to be true, got false")
+	}
+	if tokenExpiration != 3600 {
+		t.Errorf("Expected token expiration to be 3600, got %d", tokenExpiration)
 	}
 }

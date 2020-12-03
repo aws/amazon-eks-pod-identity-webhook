@@ -39,9 +39,10 @@ var (
 	expectedPatchAnnotation = "testing.eks.amazonaws.com/expectedPatch"
 
 	// Service Account annotation values
-	roleArnSAAnnotation   = "testing.eks.amazonaws.com/serviceAccount/roleArn"
-	audienceAnnotation    = "testing.eks.amazonaws.com/serviceAccount/audience"
-	saInjectSTSAnnotation = "testing.eks.amazonaws.com/serviceAccount/sts-regional-endpoints"
+	roleArnSAAnnotation               = "testing.eks.amazonaws.com/serviceAccount/roleArn"
+	audienceAnnotation                = "testing.eks.amazonaws.com/serviceAccount/audience"
+	saInjectSTSAnnotation             = "testing.eks.amazonaws.com/serviceAccount/sts-regional-endpoints"
+	saInjectTokenExpirationAnnotation = "testing.eks.amazonaws.com/serviceAccount/token-expiration"
 
 	// Handler values
 	handlerMountPathAnnotation  = "testing.eks.amazonaws.com/handler/mountPath"
@@ -120,7 +121,15 @@ func TestHandlePod(t *testing.T) {
 					}
 				}
 
-				patch, _ := modifier.updatePodSpec(pod, roleARN, audience, useRegionalSTS)
+				tokenExpiration := modifier.Expiration
+				if tokenExpirationStr, ok := pod.Annotations[saInjectTokenExpirationAnnotation]; ok {
+					tokenExpiration, err = strconv.ParseInt(tokenExpirationStr, 10, 64)
+					if err != nil {
+						t.Errorf("Error parsing annotation %s: %v", saInjectTokenExpirationAnnotation, err)
+					}
+				}
+
+				patch, _ := modifier.updatePodSpec(pod, roleARN, audience, useRegionalSTS, tokenExpiration)
 				patchBytes, err := json.Marshal(patch)
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)

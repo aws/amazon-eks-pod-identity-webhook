@@ -8,7 +8,8 @@ metadata:
     testing.eks.amazonaws.com/serviceAccount/audience: "sts.amazonaws.com"
     testing.eks.amazonaws.com/handler/injectSTS: "true"
     testing.eks.amazonaws.com/handler/region: "cn-north-1"
-    testing.eks.amazonaws.com/expectedPatch: '[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_REGION","value":"cn-northwest-1"},{"name":"AWS_STS_REGIONAL_ENDPOINTS","value":"regional"},{"name":"AWS_ROLE_ARN","value":"arn:aws-cn:iam::111122223333:role/s3-reader"}],"resources":{}}]}]'
+    testing.eks.amazonaws.com/handler/expiration: "3600"
+    testing.eks.amazonaws.com/expectedPatch: '[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":3600,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_REGION","value":"cn-northwest-1"},{"name":"AWS_STS_REGIONAL_ENDPOINTS","value":"regional"},{"name":"AWS_ROLE_ARN","value":"arn:aws-cn:iam::111122223333:role/s3-reader"}],"resources":{}}]}]'
 spec:
   containers:
   - env:
