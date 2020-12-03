@@ -21,6 +21,8 @@ const (
 	RoleARNAnnotation = "role-arn"
 	// A true/false value to add AWS_STS_REGIONAL_ENDPOINTS. Overrides any setting on the webhook
 	UseRegionalSTSAnnotation = "sts-regional-endpoints"
+	// Expiration in seconds for serviceAccountToken annotation
+	TokenExpirationAnnotation = "token-expiration"
 
 	// A comma-separated list of container names to skip adding environment variables and volumes to. Applies to `initContainers` and `containers`
 	SkipContainersAnnotation = "skip-containers"

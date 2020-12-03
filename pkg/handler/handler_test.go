@@ -95,7 +95,7 @@ var rawPodWithoutVolume = []byte(`
 }
 `)
 
-var validPatchIfNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
+var validPatchIfNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":3600,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 
 var validHandlerResponse = &v1beta1.AdmissionResponse{
 	UID:       "918ef1dc-928f-4525-99ef-988389f263c3",
@@ -143,6 +143,7 @@ func TestModifierHandler(t *testing.T) {
 	testServiceAccount.Namespace = "default"
 	testServiceAccount.Annotations = map[string]string{
 		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
+		"eks.amazonaws.com/token-expiration": "3600",
 	}
 
 	modifier := NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)))

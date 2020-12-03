@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
@@ -258,7 +259,7 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 	return changed
 }
 
-func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, regionalSTS bool) ([]patchOperation, bool) {
+func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, regionalSTS bool, tokenExpiration int64) ([]patchOperation, bool) {
 	updateSettings := newPodUpdateSettings(m.AnnotationDomain, pod, regionalSTS)
 
 	tokenFilePath := filepath.Join(m.MountPath, m.tokenName)
@@ -286,6 +287,15 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, reg
 		containers = append(containers, container)
 	}
 
+	expirationKey := m.AnnotationDomain + "/" + pkg.TokenExpirationAnnotation
+	if expirationStr, ok := pod.Annotations[expirationKey]; ok {
+		if expiration, err := strconv.ParseInt(expirationStr, 10, 64); err != nil {
+			klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", tokenExpiration, err)
+		} else {
+			tokenExpiration = pkg.ValidateMinTokenExpiration(expiration)
+		}
+	}
+
 	volume := corev1.Volume{
 		Name: m.volName,
 		VolumeSource: corev1.VolumeSource{
@@ -294,7 +304,7 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, reg
 					{
 						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
 							Audience:          audience,
-							ExpirationSeconds: &m.Expiration,
+							ExpirationSeconds: &tokenExpiration,
 							Path:              m.tokenName,
 						},
 					},
@@ -378,7 +388,7 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 
 	pod.Namespace = req.Namespace
 
-	podRole, audience, regionalSTS := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
+	podRole, audience, regionalSTS, tokenExpiration := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
 
 	// determine whether to perform mutation
 	if podRole == "" {
@@ -393,7 +403,7 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 		}
 	}
 
-	patch, changed := m.updatePodSpec(&pod, podRole, audience, regionalSTS)
+	patch, changed := m.updatePodSpec(&pod, podRole, audience, regionalSTS, tokenExpiration)
 	patchBytes, err := json.Marshal(patch)
 	if err != nil {
 		klog.Errorf("Error marshaling pod update: %v", err.Error())

@@ -53,6 +53,10 @@ This webhook is for mutating pods that will require AWS IAM access.
         # optional: When set to "true", adds AWS_STS_REGIONAL_ENDPOINTS env var
         #   to containers
         eks.amazonaws.com/sts-regional-endpoints: "true"
+        # optional: Defaults to 86400 for expirationSeconds if not set
+        #   Note: This value can be overwritten if specified in the pod 
+        #         annotation as shown in the next step.
+        eks.amazonaws.com/token-expiration: "86400"
     ```
 4. All new pod pods launched using this Service Account will be modified to use
    IAM for pods. Below is an example pod spec with the environment variables and
@@ -65,8 +69,11 @@ This webhook is for mutating pods that will require AWS IAM access.
       namespace: default
       annotations:
         # optional: A comma-separated list of initContainers and container names
-        #   to skip adding volumes and environemnt variables
+        #   to skip adding volumes and environment variables
         eks.amazonaws.com/skip-containers: "init-first,sidecar"
+        # optional: Defaults to 86400, or value specified in ServiceAccount
+        #   annotation as shown in previous step, for expirationSeconds if not set
+        eks.amazonaws.com/token-expiration: "86400"
     spec:
       serviceAccountName: my-serviceaccount
       initContainers:
