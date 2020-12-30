@@ -149,15 +149,13 @@ func main() {
 	if *inCluster {
 		csr := &x509.CertificateRequest{
 			Subject: pkix.Name{CommonName: fmt.Sprintf("%s.%s.svc", *serviceName, *namespaceName)},
+			DNSNames: []string{
+				fmt.Sprintf("%s", *serviceName),
+				fmt.Sprintf("%s.%s", *serviceName, *namespaceName),
+				fmt.Sprintf("%s.%s.svc", *serviceName, *namespaceName),
+				fmt.Sprintf("%s.%s.svc.cluster.local", *serviceName, *namespaceName),
+			},
 			/*
-				// TODO: EKS Signer only allows SANS for ec2-approved domains, once this is fixed
-				// add additional domains and IPs
-				DNSNames: []string{
-					fmt.Sprintf("%s", *serviceName),
-					fmt.Sprintf("%s.%s", *serviceName, *namespaceName),
-					fmt.Sprintf("%s.%s.svc", *serviceName, *namespaceName),
-					fmt.Sprintf("%s.%s.svc.cluster.local", *serviceName, *namespaceName),
-				},
 				// TODO: SANIPs for service IP, but not pod IP
 				//IPAddresses: nil,
 			*/
