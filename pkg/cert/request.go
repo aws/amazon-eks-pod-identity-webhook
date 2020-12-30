@@ -65,6 +65,7 @@ func NewServerCertificateManager(kubeClient clientset.Interface, namespace, secr
 			// authenticate itself to a TLS client.
 			certificates.UsageServerAuth,
 		},
+		SignerName:          certificates.LegacyUnknownSignerName,
 		CertificateStore:    certificateStore,
 		CertificateRotation: certificateRotation,
 	})
