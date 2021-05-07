@@ -21,16 +21,15 @@ import (
 	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
-	certificates "k8s.io/api/certificates/v1beta1"
+	certificates "k8s.io/api/certificates/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	certificatesclient "k8s.io/client-go/kubernetes/typed/certificates/v1beta1"
 	"k8s.io/client-go/util/certificate"
 )
 
 // NewServerCertificateManager returns a certificate manager that stores TLS keys in Kubernetes Secrets
 func NewServerCertificateManager(kubeClient clientset.Interface, namespace, secretName string, csr *x509.CertificateRequest) (certificate.Manager, error) {
-	clientFn := func(_ *tls.Certificate) (certificatesclient.CertificateSigningRequestInterface, error) {
-		return kubeClient.CertificatesV1beta1().CertificateSigningRequests(), nil
+	clientsetFn := func(_ *tls.Certificate) (clientset.Interface, error) {
+		return kubeClient, nil
 	}
 
 	certificateStore := NewSecretCertStore(
@@ -49,8 +48,8 @@ func NewServerCertificateManager(kubeClient clientset.Interface, namespace, secr
 	prometheus.MustRegister(certificateRotation)
 
 	m, err := certificate.NewManager(&certificate.Config{
-		ClientFn: clientFn,
-		Template: csr,
+		ClientsetFn: clientsetFn,
+		Template:    csr,
 		Usages: []certificates.KeyUsage{
 			// https://tools.ietf.org/html/rfc5280#section-4.2.1.3
 			//
@@ -65,7 +64,7 @@ func NewServerCertificateManager(kubeClient clientset.Interface, namespace, secr
 			// authenticate itself to a TLS client.
 			certificates.UsageServerAuth,
 		},
-		SignerName:          certificates.LegacyUnknownSignerName,
+		SignerName:          "kubernetes.io/kubelet-serving",
 		CertificateStore:    certificateStore,
 		CertificateRotation: certificateRotation,
 	})
