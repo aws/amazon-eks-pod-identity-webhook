@@ -36,7 +36,7 @@ func TestSaCache(t *testing.T) {
 
 	assert.Equal(t, roleArn, role, "Expected role to be %s, got %s", roleArn, role)
 	assert.Equal(t, "sts.amazonaws.com", aud, "Expected aud to be sts.amzonaws.com, got %s", aud)
-	assert.Equal(t, true, useRegionalSTS, "Expected regional STS to be true, got false")
+	assert.True(t, useRegionalSTS, "Expected regional STS to be true, got false")
 	assert.Equal(t, int64(3600), tokenExpiration, "Expected token expiration to be 3600, got %d", tokenExpiration)
 }
 
@@ -61,5 +61,5 @@ func TestNonRegionalSTS(t *testing.T) {
 
 	_, _, useRegionalSTS, _ := cache.Get("default", "default")
 
-	assert.Equal(t, false, useRegionalSTS, "Expected regional STS to be false, got true")
+	assert.False(t, useRegionalSTS, "Expected regional STS to be false, got true")
 }
