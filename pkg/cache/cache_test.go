@@ -61,5 +61,5 @@ func TestNonRegionalSTS(t *testing.T) {
 
 	_, _, useRegionalSTS, _ := cache.Get("default", "default")
 
-	assert.Equal(t, false, useRegionalSTS, "Expected regional STS to be true, got false")
+	assert.Equal(t, false, useRegionalSTS, "Expected regional STS to be false, got true")
 }
