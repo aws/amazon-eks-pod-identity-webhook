@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -108,17 +108,17 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 		}
 
 		resp.UseRegionalSTS = c.defaultRegionalSTS
-		if disableRegionalStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.UseRegionalSTSAnnotation]; ok {
-			disableRegional, err := strconv.ParseBool(disableRegionalStr)
+		if useRegionalStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.UseRegionalSTSAnnotation]; ok {
+			useRegional, err := strconv.ParseBool(useRegionalStr)
 			if err != nil {
 				klog.V(4).Infof("Ignoring service account %s/%s invalid value for disable-regional-sts annotation", sa.Namespace, sa.Name)
 			} else {
-				resp.UseRegionalSTS = !disableRegional
+				resp.UseRegionalSTS = useRegional
 			}
 		}
 
 		resp.TokenExpiration = c.defaultTokenExpiration
-		if tokenExpirationStr, ok := sa.Annotations[c.annotationPrefix + "/" + pkg.TokenExpirationAnnotation]; ok {
+		if tokenExpirationStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.TokenExpirationAnnotation]; ok {
 			if tokenExpiration, err := strconv.ParseInt(tokenExpirationStr, 10, 64); err != nil {
 				klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", resp.TokenExpiration, err)
 			} else {
