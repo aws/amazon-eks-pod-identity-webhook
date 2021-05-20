@@ -183,7 +183,7 @@ almost all cases, unless the STS regional endpoint is [disabled in your
 account](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_enable-regions.html).
 
 You can also enable this per-service account with the annotation
-`eks.amazonaws.com/sts-regional-endpoint` set to `"true"`.
+`eks.amazonaws.com/sts-regional-endpoints` set to `"true"`.
 
 ## Container Images
 
