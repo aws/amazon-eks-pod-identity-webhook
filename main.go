@@ -32,6 +32,7 @@ import (
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/handler"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	flag "github.com/spf13/pflag"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
@@ -97,6 +98,8 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Error creating clientset: %v", err.Error())
 	}
+	informerFactory := informers.NewSharedInformerFactory(clientset, 60*time.Second)
+	informer := informerFactory.Core().V1().ServiceAccounts()
 
 	*tokenExpiration = pkg.ValidateMinTokenExpiration(*tokenExpiration)
 	saCache := cache.New(
@@ -104,9 +107,12 @@ func main() {
 		*annotationPrefix,
 		*regionalSTS,
 		*tokenExpiration,
-		clientset,
+		informer,
 	)
-	saCache.Start()
+	stop := make(chan struct{})
+	informerFactory.Start(stop)
+	saCache.Start(stop)
+	defer close(stop)
 
 	mod := handler.NewModifier(
 		handler.WithAnnotationDomain(*annotationPrefix),

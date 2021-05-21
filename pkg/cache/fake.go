@@ -41,7 +41,7 @@ func NewFakeServiceAccountCache(accounts ...*v1.ServiceAccount) *FakeServiceAcco
 var _ ServiceAccountCache = &FakeServiceAccountCache{}
 
 // Start does nothing
-func (f *FakeServiceAccountCache) Start() {}
+func (f *FakeServiceAccountCache) Start(chan struct{}) {}
 
 // Get gets a service account from the cache
 func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
