@@ -177,6 +177,7 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 func (c *serviceAccountCache) start(stop chan struct{}) {
 
 	if !cache.WaitForCacheSync(stop, c.hasSynced) {
+		klog.Fatal("unable to sync serviceaccount cache!")
 		return
 	}
 

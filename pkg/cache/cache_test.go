@@ -129,6 +129,7 @@ func TestNonRegionalSTS(t *testing.T) {
 			informer := informerFactory.Core().V1().ServiceAccounts()
 
 			cache := New(audience, "eks.amazonaws.com", tc.defaultRegionalSTS, 86400, informer)
+			cache.(*serviceAccountCache).hasSynced = func() bool { return true }
 			stop := make(chan struct{})
 			informerFactory.Start(stop)
 			cache.Start(stop)
