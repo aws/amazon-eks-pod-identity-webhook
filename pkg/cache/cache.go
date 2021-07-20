@@ -20,13 +20,11 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
-	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
+	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
@@ -40,7 +38,7 @@ type CacheResponse struct {
 }
 
 type ServiceAccountCache interface {
-	Start()
+	Start(stop chan struct{})
 	Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64)
 	// ToJSON returns cache contents as JSON string
 	ToJSON() string
@@ -49,8 +47,7 @@ type ServiceAccountCache interface {
 type serviceAccountCache struct {
 	mu                     sync.RWMutex // guards cache
 	cache                  map[string]*CacheResponse
-	store                  cache.Store
-	controller             cache.Controller
+	hasSynced              cache.InformerSynced
 	clientset              kubernetes.Interface
 	annotationPrefix       string
 	defaultAudience        string
@@ -108,17 +105,17 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 		}
 
 		resp.UseRegionalSTS = c.defaultRegionalSTS
-		if disableRegionalStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.UseRegionalSTSAnnotation]; ok {
-			disableRegional, err := strconv.ParseBool(disableRegionalStr)
+		if useRegionalStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.UseRegionalSTSAnnotation]; ok {
+			useRegional, err := strconv.ParseBool(useRegionalStr)
 			if err != nil {
 				klog.V(4).Infof("Ignoring service account %s/%s invalid value for disable-regional-sts annotation", sa.Namespace, sa.Name)
 			} else {
-				resp.UseRegionalSTS = !disableRegional
+				resp.UseRegionalSTS = useRegional
 			}
 		}
 
 		resp.TokenExpiration = c.defaultTokenExpiration
-		if tokenExpirationStr, ok := sa.Annotations[c.annotationPrefix + "/" + pkg.TokenExpirationAnnotation]; ok {
+		if tokenExpirationStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.TokenExpirationAnnotation]; ok {
 			if tokenExpiration, err := strconv.ParseInt(tokenExpirationStr, 10, 64); err != nil {
 				klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", resp.TokenExpiration, err)
 			} else {
@@ -136,26 +133,17 @@ func (c *serviceAccountCache) set(name, namespace string, resp *CacheResponse) {
 	c.cache[namespace+"/"+name] = resp
 }
 
-func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenExpiration int64, clientset kubernetes.Interface) ServiceAccountCache {
+func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenExpiration int64, informer coreinformers.ServiceAccountInformer) ServiceAccountCache {
 	c := &serviceAccountCache{
 		cache:                  map[string]*CacheResponse{},
 		defaultAudience:        defaultAudience,
 		annotationPrefix:       prefix,
 		defaultRegionalSTS:     defaultRegionalSTS,
 		defaultTokenExpiration: defaultTokenExpiration,
+		hasSynced:              informer.Informer().HasSynced,
 	}
 
-	saListWatcher := cache.NewListWatchFromClient(
-		clientset.CoreV1().RESTClient(),
-		"serviceaccounts",
-		v1.NamespaceAll,
-		fields.Everything(),
-	)
-
-	c.store, c.controller = cache.NewInformer(
-		saListWatcher,
-		&v1.ServiceAccount{},
-		time.Second*60,
+	informer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				sa := obj.(*v1.ServiceAccount)
@@ -186,24 +174,16 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 	return c
 }
 
-func (c *serviceAccountCache) start() {
-	// Populate the cache
-	err := cache.ListAll(c.store, labels.Everything(), func(obj interface{}) {
-		sa := obj.(*v1.ServiceAccount)
-		c.addSA(sa)
-	})
-	if err != nil {
-		klog.Errorf("Error fetching service accounts: %v", err.Error())
+func (c *serviceAccountCache) start(stop chan struct{}) {
+
+	if !cache.WaitForCacheSync(stop, c.hasSynced) {
+		klog.Fatal("unable to sync serviceaccount cache!")
 		return
 	}
 
-	stop := make(chan struct{})
-	defer close(stop)
-	go c.controller.Run(stop)
-	// Wait forever
-	select {}
+	<-stop
 }
 
-func (c *serviceAccountCache) Start() {
-	go c.start()
+func (c *serviceAccountCache) Start(stop chan struct{}) {
+	go c.start(stop)
 }
