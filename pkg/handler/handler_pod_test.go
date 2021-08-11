@@ -26,6 +26,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 )
@@ -51,33 +52,50 @@ var (
 	handlerSTSAnnotation        = "testing.eks.amazonaws.com/handler/injectSTS"
 )
 
-func getModifierFromPod(pod corev1.Pod) (*Modifier, error) {
+// getTestValuesFromPod gets values to set up test case environments with as if
+// the values were set by service account annotation/flag before the test case.
+// Test cases are defined entirely by pod yamls.
+func getTestValuesFromPod(pod corev1.Pod) (*Modifier, int64, bool, error) {
 	modifiers := []ModifierOpt{}
 
 	if path, ok := pod.Annotations[handlerMountPathAnnotation]; ok {
 		modifiers = append(modifiers, WithMountPath(path))
 	}
+
+	tokenExpiration := pkg.DefaultTokenExpiration
 	if expStr, ok := pod.Annotations[handlerExpirationAnnotation]; ok {
 		expInt, err := strconv.Atoi(expStr)
 		if err != nil {
-			return nil, err
+			return nil, 0, false, err
 		}
-		modifiers = append(modifiers, WithExpiration(int64(expInt)))
+		tokenExpiration = int64(expInt)
 	}
+
+	if expStr, ok := pod.Annotations[handlerExpirationAnnotation]; ok {
+		expInt, err := strconv.Atoi(expStr)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		tokenExpiration = int64(expInt)
+	}
+
 	if region, ok := pod.Annotations[handlerRegionAnnotation]; ok {
 		modifiers = append(modifiers, WithRegion(region))
 	}
+
+	regionalSTS := false
 	if stsAnnotation, ok := pod.Annotations[handlerSTSAnnotation]; ok {
 		value, err := strconv.ParseBool(stsAnnotation)
 		if err != nil {
-			return nil, err
+			return nil, 0, false, err
 		}
-		modifiers = append(modifiers, WithRegionalSTS(value))
+		regionalSTS = value
 	}
-	return NewModifier(modifiers...), nil
+
+	return NewModifier(modifiers...), tokenExpiration, regionalSTS, nil
 }
 
-func TestHandlePod(t *testing.T) {
+func TestUpdatePodSpec(t *testing.T) {
 	err := filepath.Walk(fixtureDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			t.Errorf("Error while walking test fixtures: %v", err)
@@ -100,28 +118,28 @@ func TestHandlePod(t *testing.T) {
 			}
 
 			t.Run(fmt.Sprintf("Pod %s in file %s", pod.Name, path), func(t *testing.T) {
-				modifier, err := getModifierFromPod(*pod)
+				modifier, tokenExpiration, regionalSTS, err := getTestValuesFromPod(*pod)
 				if err != nil {
 					t.Errorf("Error creating modifier: %v", err)
 				}
+
 				var roleARN string
 				if role, ok := pod.Annotations[roleArnSAAnnotation]; ok {
 					roleARN = role
 				}
+
 				audience := "sts.amazonaws.com"
 				if aud, ok := pod.Annotations[audienceAnnotation]; ok {
 					audience = aud
 				}
 
-				useRegionalSTS := modifier.RegionalSTSEndpoint
-				if useRegionalSTSstr, ok := pod.Annotations[saInjectSTSAnnotation]; ok {
-					useRegionalSTS, err = strconv.ParseBool(useRegionalSTSstr)
+				if regionalSTSstr, ok := pod.Annotations[saInjectSTSAnnotation]; ok {
+					regionalSTS, err = strconv.ParseBool(regionalSTSstr)
 					if err != nil {
 						t.Errorf("Error parsing annotation %s: %v", saInjectSTSAnnotation, err)
 					}
 				}
 
-				tokenExpiration := modifier.Expiration
 				if tokenExpirationStr, ok := pod.Annotations[saInjectTokenExpirationAnnotation]; ok {
 					tokenExpiration, err = strconv.ParseInt(tokenExpirationStr, 10, 64)
 					if err != nil {
@@ -129,7 +147,8 @@ func TestHandlePod(t *testing.T) {
 					}
 				}
 
-				patch, _ := modifier.updatePodSpec(pod, roleARN, audience, useRegionalSTS, tokenExpiration)
+				tokenExpiration, containersToSkip := modifier.parsePodAnnotations(pod, tokenExpiration)
+				patch, _ := modifier.getPodSpecPatch(pod, roleARN, audience, regionalSTS, tokenExpiration, containersToSkip)
 				patchBytes, err := json.Marshal(patch)
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)

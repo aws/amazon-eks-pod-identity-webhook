@@ -123,7 +123,7 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 			}
 		}
 	}
-	klog.V(5).Infof("Adding sa %s/%s to cache", sa.Name, sa.Namespace)
+	klog.V(5).Infof("Adding sa %s/%s to cache: %+v", sa.Name, sa.Namespace, resp)
 	c.set(sa.Name, sa.Namespace, resp)
 }
 
