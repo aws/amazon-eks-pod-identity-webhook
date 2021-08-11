@@ -199,7 +199,7 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 	changed := false
 	env := container.Env
 
-	if !regionalStsKeyDefined && m.RegionalSTSEndpoint && podSettings.useRegionalSTS {
+	if !regionalStsKeyDefined && podSettings.useRegionalSTS {
 		env = append(env,
 			corev1.EnvVar{
 				Name:  stsKey,
