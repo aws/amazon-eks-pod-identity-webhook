@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +29,7 @@ func TestSaCache(t *testing.T) {
 		cache:            map[string]*CacheResponse{},
 		defaultAudience:  "sts.amazonaws.com",
 		annotationPrefix: "eks.amazonaws.com",
+		webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
 	}
 
 	role, aud, useRegionalSTS, tokenExpiration := cache.Get("default", "default")
