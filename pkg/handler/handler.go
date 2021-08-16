@@ -27,7 +27,6 @@ import (
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
-	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/api/admission/v1beta1"
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,15 +39,6 @@ import (
 type podUpdateSettings struct {
 	skipContainers map[string]bool
 	useRegionalSTS bool
-}
-
-var mutations = prometheus.NewCounter(prometheus.CounterOpts{
-	Name: "mutations",
-	Help: "Count of mutations on the pods",
-})
-
-func init() {
-	prometheus.MustRegister(mutations)
 }
 
 // newPodUpdateSettings returns the update settings for a particular pod
@@ -426,7 +416,6 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 
 	// TODO: klog structured logging can make this better
 	if changed {
-		mutations.Inc()
 		klog.V(3).Infof("Pod was mutated. %s",
 			logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
 	} else {
