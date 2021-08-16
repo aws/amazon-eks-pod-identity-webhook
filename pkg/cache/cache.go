@@ -57,17 +57,6 @@ type serviceAccountCache struct {
 	saCount                prometheus.Gauge
 }
 
-var saCount = prometheus.NewGauge(
-	prometheus.GaugeOpts{
-		Name: "sa_count",
-		Help: "Counter for number of service accounts annotated with pod identity webhook",
-	},
-)
-
-func init() {
-	prometheus.MustRegister(saCount)
-}
-
 func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	resp := c.get(name, namespace)
@@ -148,6 +137,13 @@ func (c *serviceAccountCache) set(name, namespace string, resp *CacheResponse) {
 }
 
 func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenExpiration int64, informer coreinformers.ServiceAccountInformer) ServiceAccountCache {
+	saCount := prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "sa_count",
+			Help: "Counter for number of service accounts annotated with pod identity webhook",
+		},
+	)
+	prometheus.MustRegister(saCount)
 	c := &serviceAccountCache{
 		cache:                  map[string]*CacheResponse{},
 		defaultAudience:        defaultAudience,
