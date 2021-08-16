@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
+	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	coreinformers "k8s.io/client-go/informers/core/v1"
@@ -53,6 +54,7 @@ type serviceAccountCache struct {
 	defaultAudience        string
 	defaultRegionalSTS     bool
 	defaultTokenExpiration int64
+	saCount                prometheus.Gauge
 }
 
 func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
@@ -122,6 +124,7 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 				resp.TokenExpiration = pkg.ValidateMinTokenExpiration(tokenExpiration)
 			}
 		}
+		c.saCount.Inc()
 	}
 	klog.V(5).Infof("Adding sa %s/%s to cache", sa.Name, sa.Namespace)
 	c.set(sa.Name, sa.Namespace, resp)
@@ -134,6 +137,13 @@ func (c *serviceAccountCache) set(name, namespace string, resp *CacheResponse) {
 }
 
 func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenExpiration int64, informer coreinformers.ServiceAccountInformer) ServiceAccountCache {
+	saCount := prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "sa_count",
+			Help: "Counter for number of service accounts annotated with pod identity webhook",
+		},
+	)
+	prometheus.MustRegister(saCount)
 	c := &serviceAccountCache{
 		cache:                  map[string]*CacheResponse{},
 		defaultAudience:        defaultAudience,
@@ -141,6 +151,7 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 		defaultRegionalSTS:     defaultRegionalSTS,
 		defaultTokenExpiration: defaultTokenExpiration,
 		hasSynced:              informer.Informer().HasSynced,
+		saCount:                saCount,
 	}
 
 	informer.Informer().AddEventHandler(
@@ -163,6 +174,10 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 						return
 					}
 				}
+				if _, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.RoleARNAnnotation]; ok {
+					c.saCount.Dec()
+				}
+				c.saCount.Dec()
 				c.pop(sa.Name, sa.Namespace)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
@@ -171,6 +186,7 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 			},
 		},
 	)
+
 	return c
 }
 
