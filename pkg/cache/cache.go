@@ -64,6 +64,10 @@ var webhookUsage = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Indicator to know pod identity webhook is used",
 })
 
+func init() {
+	prometheus.MustRegister(webhookUsage)
+}
+
 func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	resp := c.get(name, namespace)
@@ -151,6 +155,7 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 		defaultRegionalSTS:     defaultRegionalSTS,
 		defaultTokenExpiration: defaultTokenExpiration,
 		hasSynced:              informer.Informer().HasSynced,
+		webhookUsage:           webhookUsage,
 	}
 
 	informer.Informer().AddEventHandler(
