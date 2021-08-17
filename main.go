@@ -116,11 +116,9 @@ func main() {
 
 	mod := handler.NewModifier(
 		handler.WithAnnotationDomain(*annotationPrefix),
-		handler.WithExpiration(*tokenExpiration),
 		handler.WithMountPath(*mountPath),
 		handler.WithServiceAccountCache(saCache),
 		handler.WithRegion(*region),
-		handler.WithRegionalSTS(*regionalSTS),
 	)
 
 	addr := fmt.Sprintf(":%d", *port)

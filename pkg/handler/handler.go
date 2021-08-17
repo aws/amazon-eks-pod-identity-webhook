@@ -36,34 +36,6 @@ import (
 	"k8s.io/klog"
 )
 
-type podUpdateSettings struct {
-	skipContainers map[string]bool
-	useRegionalSTS bool
-}
-
-// newPodUpdateSettings returns the update settings for a particular pod
-func newPodUpdateSettings(annotationDomain string, pod *corev1.Pod, useRegionalSTS bool) *podUpdateSettings {
-	settings := &podUpdateSettings{
-		useRegionalSTS: useRegionalSTS,
-	}
-
-	skippedNames := map[string]bool{}
-	skipContainersKey := annotationDomain + "/" + pkg.SkipContainersAnnotation
-	if value, ok := pod.Annotations[skipContainersKey]; ok {
-		r := csv.NewReader(strings.NewReader(value))
-		// error means we don't skip any
-		podNames, err := r.Read()
-		if err != nil {
-			klog.Infof("Could parse skip containers annotation on pod %s/%s: %v", pod.Namespace, pod.Name, err)
-		}
-		for _, name := range podNames {
-			skippedNames[name] = true
-		}
-	}
-	settings.skipContainers = skippedNames
-	return settings
-}
-
 func init() {
 	_ = corev1.AddToScheme(runtimeScheme)
 	_ = admissionregistrationv1beta1.AddToScheme(runtimeScheme)
@@ -88,19 +60,9 @@ func WithMountPath(mountpath string) ModifierOpt {
 	return func(m *Modifier) { m.MountPath = mountpath }
 }
 
-// WithExpiration sets the modifier expiration
-func WithExpiration(exp int64) ModifierOpt {
-	return func(m *Modifier) { m.Expiration = exp }
-}
-
 // WithRegion sets the modifier region
 func WithRegion(region string) ModifierOpt {
 	return func(m *Modifier) { m.Region = region }
-}
-
-// WithRegionalSTS sets the modifier RegionalSTSEndpoint
-func WithRegionalSTS(enabled bool) ModifierOpt {
-	return func(m *Modifier) { m.RegionalSTSEndpoint = enabled }
 }
 
 // WithAnnotationDomain adds an annotation domain
@@ -111,12 +73,10 @@ func WithAnnotationDomain(domain string) ModifierOpt {
 // NewModifier returns a Modifier with default values
 func NewModifier(opts ...ModifierOpt) *Modifier {
 	mod := &Modifier{
-		AnnotationDomain:    "eks.amazonaws.com",
-		MountPath:           "/var/run/secrets/eks.amazonaws.com/serviceaccount",
-		Expiration:          86400,
-		RegionalSTSEndpoint: false,
-		volName:             "aws-iam-token",
-		tokenName:           "token",
+		AnnotationDomain: "eks.amazonaws.com",
+		MountPath:        "/var/run/secrets/eks.amazonaws.com/serviceaccount",
+		volName:          "aws-iam-token",
+		tokenName:        "token",
 	}
 	for _, opt := range opts {
 		opt(mod)
@@ -127,14 +87,12 @@ func NewModifier(opts ...ModifierOpt) *Modifier {
 
 // Modifier holds configuration values for pod modifications
 type Modifier struct {
-	AnnotationDomain    string
-	Expiration          int64
-	MountPath           string
-	Region              string
-	RegionalSTSEndpoint bool
-	Cache               cache.ServiceAccountCache
-	volName             string
-	tokenName           string
+	AnnotationDomain string
+	MountPath        string
+	Region           string
+	Cache            cache.ServiceAccountCache
+	volName          string
+	tokenName        string
 }
 
 type patchOperation struct {
@@ -156,13 +114,26 @@ func logContext(podName, podGenerateName, serviceAccountName, namespace string) 
 		namespace)
 }
 
-func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath, roleName string, podSettings *podUpdateSettings) bool {
-	// return if this is a named skipped container
-	if _, ok := podSettings.skipContainers[container.Name]; ok {
-		klog.V(4).Infof("Container %s was annotated to be skipped", container.Name)
-		return false
+// getContainersToSkip returns the containers of a pod to skip mutating
+func getContainersToSkip(annotationDomain string, pod *corev1.Pod) map[string]bool {
+	skippedNames := map[string]bool{}
+	skipContainersKey := annotationDomain + "/" + pkg.SkipContainersAnnotation
+	if value, ok := pod.Annotations[skipContainersKey]; ok {
+		r := csv.NewReader(strings.NewReader(value))
+		// error means we don't skip any
+		podNames, err := r.Read()
+		if err != nil {
+			klog.Infof("Could not parse skip containers annotation on pod %s/%s: %v", pod.Namespace, pod.Name, err)
+			return skippedNames
+		}
+		for _, name := range podNames {
+			skippedNames[name] = true
+		}
 	}
+	return skippedNames
+}
 
+func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath, roleName string, regionalSTS bool) bool {
 	var (
 		reservedKeysDefined   bool
 		regionKeyDefined      bool
@@ -199,7 +170,7 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 	changed := false
 	env := container.Env
 
-	if !regionalStsKeyDefined && m.RegionalSTSEndpoint && podSettings.useRegionalSTS {
+	if !regionalStsKeyDefined && regionalSTS {
 		env = append(env,
 			corev1.EnvVar{
 				Name:  stsKey,
@@ -259,9 +230,31 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath,
 	return changed
 }
 
-func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, regionalSTS bool, tokenExpiration int64) ([]patchOperation, bool) {
-	updateSettings := newPodUpdateSettings(m.AnnotationDomain, pod, regionalSTS)
+// parsePodAnnotations parses the pod annotations that can influence mutation:
+// - tokenExpiration. Overrides the given service account annotation/flag-level
+// setting.
+// - containersToSkip. A Pod specific setting since certain containers within a
+// specific pod might need to be opted-out of mutation
+func (m *Modifier) parsePodAnnotations(pod *corev1.Pod, serviceAccountTokenExpiration int64) (int64, map[string]bool) {
+	// override serviceaccount annotation/flag token expiration with pod
+	// annotation if present
+	tokenExpiration := serviceAccountTokenExpiration
+	expirationKey := m.AnnotationDomain + "/" + pkg.TokenExpirationAnnotation
+	if expirationStr, ok := pod.Annotations[expirationKey]; ok {
+		if expiration, err := strconv.ParseInt(expirationStr, 10, 64); err != nil {
+			klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", serviceAccountTokenExpiration, err)
+		} else {
+			tokenExpiration = pkg.ValidateMinTokenExpiration(expiration)
+		}
+	}
 
+	containersToSkip := getContainersToSkip(m.AnnotationDomain, pod)
+
+	return tokenExpiration, containersToSkip
+}
+
+// getPodSpecPatch gets the patch operation to be applied to the given Pod
+func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, roleName, audience string, regionalSTS bool, tokenExpiration int64, containersToSkip map[string]bool) ([]patchOperation, bool) {
 	tokenFilePath := filepath.Join(m.MountPath, m.tokenName)
 
 	betaNodeSelector, _ := pod.Spec.NodeSelector["beta.kubernetes.io/os"]
@@ -274,26 +267,27 @@ func (m *Modifier) updatePodSpec(pod *corev1.Pod, roleName, audience string, reg
 	}
 
 	var changed bool
+
 	var initContainers = []corev1.Container{}
 	for i := range pod.Spec.InitContainers {
 		container := pod.Spec.InitContainers[i]
-		changed = m.addEnvToContainer(&container, tokenFilePath, roleName, updateSettings)
+		if _, ok := containersToSkip[container.Name]; ok {
+			klog.V(4).Infof("Container %s was annotated to be skipped", container.Name)
+		} else if m.addEnvToContainer(&container, tokenFilePath, roleName, regionalSTS) {
+			changed = true
+		}
 		initContainers = append(initContainers, container)
 	}
+
 	var containers = []corev1.Container{}
 	for i := range pod.Spec.Containers {
 		container := pod.Spec.Containers[i]
-		changed = m.addEnvToContainer(&container, tokenFilePath, roleName, updateSettings)
-		containers = append(containers, container)
-	}
-
-	expirationKey := m.AnnotationDomain + "/" + pkg.TokenExpirationAnnotation
-	if expirationStr, ok := pod.Annotations[expirationKey]; ok {
-		if expiration, err := strconv.ParseInt(expirationStr, 10, 64); err != nil {
-			klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", tokenExpiration, err)
-		} else {
-			tokenExpiration = pkg.ValidateMinTokenExpiration(expiration)
+		if _, ok := containersToSkip[container.Name]; ok {
+			klog.V(4).Infof("Container %s was annotated to be skipped", container.Name)
+		} else if m.addEnvToContainer(&container, tokenFilePath, roleName, regionalSTS) {
+			changed = true
 		}
+		containers = append(containers, container)
 	}
 
 	volume := corev1.Volume{
@@ -388,6 +382,12 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 
 	pod.Namespace = req.Namespace
 
+	// Some mutation parameters can be overridden via pod or serviceaccount
+	// annotations. The serviceaccount cache already parsed the serviceaccount
+	// annotations and flags such that annotations take precedence.
+	// audience:        serviceaccount annotation > flag
+	// regionalSTS:     serviceaccount annotation > flag
+	// tokenExpiration: pod annotation > serviceaccount annotation > flag
 	podRole, audience, regionalSTS, tokenExpiration := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
 
 	// determine whether to perform mutation
@@ -403,7 +403,11 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 		}
 	}
 
-	patch, changed := m.updatePodSpec(&pod, podRole, audience, regionalSTS, tokenExpiration)
+	// parse pod annotations in case they override/set values otherwise dictated
+	// by serviceaccount annotation or flag
+	tokenExpiration, containersToSkip := m.parsePodAnnotations(&pod, tokenExpiration)
+
+	patch, changed := m.getPodSpecPatch(&pod, podRole, audience, regionalSTS, tokenExpiration, containersToSkip)
 	patchBytes, err := json.Marshal(patch)
 	if err != nil {
 		klog.Errorf("Error marshaling pod update: %v", err.Error())
