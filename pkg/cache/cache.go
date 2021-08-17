@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
+	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	coreinformers "k8s.io/client-go/informers/core/v1"
@@ -53,6 +54,21 @@ type serviceAccountCache struct {
 	defaultAudience        string
 	defaultRegionalSTS     bool
 	defaultTokenExpiration int64
+	webhookUsage           prometheus.Gauge
+}
+
+// We need a way to know if the webhook is used in a cluster.
+// There are multiple ways to achieve that.
+// We could keep track of the number of annotated service accounts, however we need some additional logic and refactoring to make sure the metric doesn't grow unbounded due to resync.
+// We could also track the number of pod mutations, but that won't show us the usage until pods churn.
+// This is a minimal way to know the usage. We can add more metrics for annotated service accounts and pod mutations as need arises.
+var webhookUsage = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "pod_identity_webhook_used",
+	Help: "Indicator to know pod identity webhook is used",
+})
+
+func init() {
+	prometheus.MustRegister(webhookUsage)
 }
 
 func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
@@ -122,6 +138,7 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 				resp.TokenExpiration = pkg.ValidateMinTokenExpiration(tokenExpiration)
 			}
 		}
+		c.webhookUsage.Set(1)
 	}
 	klog.V(5).Infof("Adding sa %s/%s to cache", sa.Name, sa.Namespace)
 	c.set(sa.Name, sa.Namespace, resp)
@@ -141,6 +158,7 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 		defaultRegionalSTS:     defaultRegionalSTS,
 		defaultTokenExpiration: defaultTokenExpiration,
 		hasSynced:              informer.Informer().HasSynced,
+		webhookUsage:           webhookUsage,
 	}
 
 	informer.Informer().AddEventHandler(
