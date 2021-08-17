@@ -57,8 +57,11 @@ type serviceAccountCache struct {
 	webhookUsage           prometheus.Gauge
 }
 
-// We need a way to know if the webhook is used in a cluster to drive changes.
-// We could perform more interesting operations by knowing how many service accounts are being annotated.
+// We need a way to know if the webhook is used in a cluster.
+// There are multiple ways to achieve that.
+// We could keep track of the number of annotated service accounts, however we need some additional logic and refactoring to make sure the metric doesn't grow unbounded due to resync.
+// We could also track the number of pod mutations, but that won't show us the usage until pods churn.
+// This is a minimal way to know the usage. We can add more metrics for annotated service accounts and pod mutations as need arises.
 var webhookUsage = prometheus.NewGauge(prometheus.GaugeOpts{
 	Name: "pod_identity_webhook_used",
 	Help: "Indicator to know pod identity webhook is used",
