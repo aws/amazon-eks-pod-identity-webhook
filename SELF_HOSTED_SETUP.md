@@ -65,7 +65,7 @@ Lets create these:
 ```bash
 cat <<EOF > discovery.json
 {
-    "issuer": "https://$ISSUER_HOSTPATH/",
+    "issuer": "https://$ISSUER_HOSTPATH",
     "jwks_uri": "https://$ISSUER_HOSTPATH/keys.json",
     "authorization_endpoint": "urn:kubernetes:programmatic_authorization",
     "response_types_supported": [
@@ -161,6 +161,11 @@ yourself, you can use any audience you'd like as long as the webhook's flag
 From here, you can mostly follow the process in the [EKS
 documentation](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
 and substitute the cluster issuer with `https://$ISSUER_HOSTPATH`.
+
+## Deploying the webhook
+
+Follow the steps in the [In-cluster installation](https://github.com/aws/amazon-eks-pod-identity-webhook#in-cluster) section to launch the webhook
+and its required resources in the cluster.
 
 ## Troubleshooting
 

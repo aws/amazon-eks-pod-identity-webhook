@@ -196,7 +196,7 @@ Container images for amazon-eks-pod-identity-webhook can be found on [Docker Hub
 You can use the provided configuration files in the `deploy` directory, along with the provided `Makefile`
 
 ```
-make cluster-up IMAGE=amazon/amazon-eks-pod-identity-webhook:2db5e53
+make cluster-up IMAGE=amazon/amazon-eks-pod-identity-webhook:latest
 ```
 
 This will:
