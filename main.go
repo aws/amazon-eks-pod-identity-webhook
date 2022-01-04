@@ -152,7 +152,10 @@ func main() {
 
 	if *inCluster {
 		csr := &x509.CertificateRequest{
-			Subject: pkix.Name{CommonName: fmt.Sprintf("%s.%s.svc", *serviceName, *namespaceName)},
+			Subject: pkix.Name{
+				CommonName:   fmt.Sprintf("system:node:%s.%s.svc", *serviceName, *namespaceName),
+				Organization: []string{"system:nodes"},
+			},
 			DNSNames: []string{
 				fmt.Sprintf("%s", *serviceName),
 				fmt.Sprintf("%s.%s", *serviceName, *namespaceName),
