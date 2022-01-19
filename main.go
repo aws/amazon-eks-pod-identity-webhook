@@ -73,9 +73,11 @@ func main() {
 
 	debug := flag.Bool("enable-debugging-handlers", false, "Enable debugging handlers. Currently /debug/alpha/cache is supported")
 
-	klog.InitFlags(goflag.CommandLine)
+	// use a new flagset to ensure there is no overlap between goflag and pflag
+	klogFlagset := goflag.NewFlagSet("klog", goflag.ExitOnError)
+	klog.InitFlags(klogFlagset)
 	// Add klog CommandLine flags to pflag CommandLine
-	goflag.CommandLine.VisitAll(func(f *goflag.Flag) {
+	klogFlagset.VisitAll(func(f *goflag.Flag) {
 		flag.CommandLine.AddFlag(flag.PFlagFromGoFlag(f))
 	})
 	flag.Parse()
