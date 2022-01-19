@@ -36,8 +36,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 )
 
 var webhookVersion = "v0.1.0"
@@ -73,11 +73,9 @@ func main() {
 
 	debug := flag.Bool("enable-debugging-handlers", false, "Enable debugging handlers. Currently /debug/alpha/cache is supported")
 
-	// use a new flagset to ensure there is no overlap between goflag and pflag
-	klogFlagset := goflag.NewFlagSet("klog", goflag.ExitOnError)
-	klog.InitFlags(klogFlagset)
+	klog.InitFlags(goflag.CommandLine)
 	// Add klog CommandLine flags to pflag CommandLine
-	klogFlagset.VisitAll(func(f *goflag.Flag) {
+	goflag.CommandLine.VisitAll(func(f *goflag.Flag) {
 		flag.CommandLine.AddFlag(flag.PFlagFromGoFlag(f))
 	})
 	flag.Parse()
@@ -152,7 +150,7 @@ func main() {
 		// Expose other debug paths
 	}
 
-	signalHandlerCtx := ctrl.SetupSignalHandler()
+	signalHandlerCtx := signals.SetupSignalHandler()
 	tlsConfig := &tls.Config{}
 
 	if *inCluster {
