@@ -18,30 +18,19 @@ package handler
 import (
 	"context"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"k8s.io/klog"
 )
 
-var term = syscall.SIGTERM
-
-// ShutdownOnTerm will wait for SIGTERM or SIGINT and gracefully shuts down the
-// http server or kill it after the specified timeout
-func ShutdownOnTerm(server *http.Server, timeout time.Duration) {
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt)
-	signal.Notify(c, term)
-
+func ShutdownFromContext(ctx context.Context, server *http.Server, timeout time.Duration) {
 	go func() {
-		<-c
-		klog.Infof("Received SIGTERM/SIGINT. Beginning shutdown")
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		<-ctx.Done()
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		if err := server.Shutdown(ctx); err != http.ErrServerClosed {
-			<-ctx.Done()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
 			klog.Errorf("Error shutting server down: %v", err)
 			if err := server.Close(); err != nil {
 				klog.Fatalf("Error closing server: %v", err)
