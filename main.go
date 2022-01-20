@@ -150,6 +150,7 @@ func main() {
 		// Expose other debug paths
 	}
 
+	// setup signal handler to be passed to certwatcher and http server
 	signalHandlerCtx := signals.SetupSignalHandler()
 	tlsConfig := &tls.Config{}
 
