@@ -36,6 +36,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
+	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 )
 
 var webhookVersion = "v0.1.0"
@@ -148,6 +150,8 @@ func main() {
 		// Expose other debug paths
 	}
 
+	// setup signal handler to be passed to certwatcher and http server
+	signalHandlerCtx := signals.SetupSignalHandler()
 	tlsConfig := &tls.Config{}
 
 	if *inCluster {
@@ -185,11 +189,18 @@ func main() {
 			return certificate, nil
 		}
 	} else {
-		certificate, err := tls.LoadX509KeyPair(*tlsCertFile, *tlsKeyFile)
+		watcher, err := certwatcher.New(*tlsCertFile, *tlsKeyFile)
 		if err != nil {
-			klog.Fatalf("failed to load TLS cert and key: %v", err)
+			klog.Fatalf("Error initializing certwatcher: %q", err)
 		}
-		tlsConfig.Certificates = []tls.Certificate{certificate}
+
+		go func() {
+			if err := watcher.Start(signalHandlerCtx); err != nil {
+				klog.Fatalf("Error starting certwatcher: %q", err)
+			}
+		}()
+
+		tlsConfig.GetCertificate = watcher.GetCertificate
 	}
 
 	klog.Info("Creating server")
@@ -198,7 +209,8 @@ func main() {
 		Handler:   mux,
 		TLSConfig: tlsConfig,
 	}
-	handler.ShutdownOnTerm(server, time.Duration(10)*time.Second)
+
+	handler.ShutdownFromContext(signalHandlerCtx, server, time.Duration(10)*time.Second)
 
 	metricsServer := &http.Server{
 		Addr:    metricsAddr,
