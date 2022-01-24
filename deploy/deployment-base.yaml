@@ -20,17 +20,44 @@ spec:
         imagePullPolicy: Always
         command:
         - /webhook
-        - --in-cluster
+        - --in-cluster=false
         - --namespace=default
         - --service-name=pod-identity-webhook
-        - --tls-secret=pod-identity-webhook
         - --annotation-prefix=eks.amazonaws.com
         - --token-audience=sts.amazonaws.com
         - --logtostderr
         volumeMounts:
-        - name: webhook-certs
-          mountPath: /var/run/app/certs
-          readOnly: false
+        - name: cert
+          mountPath: "/etc/webhook/certs"
+          readOnly: true
       volumes:
-      - name: webhook-certs
-        emptyDir: {}
+      - name: cert
+        secret:
+          secretName: pod-identity-webhook-cert
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: pod-identity-webhook
+  namespace: default
+spec:
+  secretName: pod-identity-webhook-cert
+  commonName: "pod-identity-webhook.default.svc"
+  dnsNames:
+  - "pod-identity-webhook"
+  - "pod-identity-webhook.default"
+  - "pod-identity-webhook.default.svc"
+  - "pod-identity-webhook.default.svc.local"
+  isCA: true
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  issuerRef:
+    name: selfsigned
+    kind: ClusterIssuer
