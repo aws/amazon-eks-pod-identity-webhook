@@ -4,6 +4,12 @@
 
 This webhook is for mutating pods that will require AWS IAM access.
 
+## Note
+After version v0.3.0, `--in-cluster=true` no longer works and is deprecated.  Please use `--in-cluster=false`
+and manage the cluster certificate with cert-manager or some other external certificate provisioning system.
+This is because certificates using the `legacy-unknown` signer are no longer signed when using the v1
+certificates API.
+
 ## EKS Walkthrough
 
 1. [Create an OIDC provider][1] in IAM for your cluster. You can find the OIDC
