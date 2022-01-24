@@ -199,16 +199,16 @@ Container images for amazon-eks-pod-identity-webhook can be found on [Docker Hub
 
 ### In-cluster
 
-You can use the provided configuration files in the `deploy` directory, along with the provided `Makefile`
+You can use the provided configuration files in the `deploy` directory, along with the provided `Makefile`. You must install a cert-manager as it is a pre-requisite for below deployments. (See [cert-manager installation](https://cert-manager.io/docs/installation/)) 
 
 ```
 make cluster-up IMAGE=amazon/amazon-eks-pod-identity-webhook:latest
 ```
 
 This will:
-* Create a service account, role, cluster-role, role-binding, and cluster-role-binding that will the deployment requires
-* Create the deployment, service, and mutating webhook in the cluster
-* Approve the CSR that the deployment created for its TLS serving certificate
+* Create a service account, role, cluster-role, role-binding, and cluster-role-binding that the deployment requires
+* Create the deployment, service, ClusterIssuer, certificate, and mutating webhook in the cluster
+* Use `in-cluster=false` so that now webhook can reload certs when they are renewed
 
 For self-hosted API server configuration, see see [SELF_HOSTED_SETUP.md](/SELF_HOSTED_SETUP.md)
 
