@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	flag "github.com/spf13/pflag"
 	"k8s.io/client-go/informers"
+	v1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
@@ -68,6 +69,7 @@ func main() {
 	tokenExpiration := flag.Int64("token-expiration", pkg.DefaultTokenExpiration, "The token expiration")
 	region := flag.String("aws-default-region", "", "If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers")
 	regionalSTS := flag.Bool("sts-regional-endpoint", false, "Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to `false`.")
+	watchConfigMap := flag.Bool("watch-config-map", false, "Whether to watch the pod-identity-webhook ConfigMap for additional Service Accounts. Defaults to `false`.")
 
 	version := flag.Bool("version", false, "Display the version and exit")
 
@@ -101,7 +103,16 @@ func main() {
 		klog.Fatalf("Error creating clientset: %v", err.Error())
 	}
 	informerFactory := informers.NewSharedInformerFactory(clientset, 60*time.Second)
-	informer := informerFactory.Core().V1().ServiceAccounts()
+
+	var cmInformer v1.ConfigMapInformer
+	var nsInformerFactory informers.SharedInformerFactory
+	if *watchConfigMap {
+		klog.Infof("Watching ConfigMap pod-identity-webhook in %s namespace", *namespaceName)
+		nsInformerFactory = informers.NewSharedInformerFactoryWithOptions(clientset, 60*time.Second, informers.WithNamespace(*namespaceName))
+		cmInformer = nsInformerFactory.Core().V1().ConfigMaps()
+	}
+
+	saInformer := informerFactory.Core().V1().ServiceAccounts()
 
 	*tokenExpiration = pkg.ValidateMinTokenExpiration(*tokenExpiration)
 	saCache := cache.New(
@@ -109,10 +120,16 @@ func main() {
 		*annotationPrefix,
 		*regionalSTS,
 		*tokenExpiration,
-		informer,
+		saInformer,
+		cmInformer,
 	)
 	stop := make(chan struct{})
 	informerFactory.Start(stop)
+
+	if *watchConfigMap {
+		nsInformerFactory.Start(stop)
+	}
+
 	saCache.Start(stop)
 	defer close(stop)
 
