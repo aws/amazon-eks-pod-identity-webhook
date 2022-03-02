@@ -143,11 +143,12 @@ When running a container with a non-root user, you need to give the container ac
 
 ```
 Usage of amazon-eks-pod-identity-webhook:
+      --add_dir_header                   If true, adds the file directory to the header
       --alsologtostderr                  log to standard error as well as files
       --annotation-prefix string         The Service Account annotation to look for (default "eks.amazonaws.com")
       --aws-default-region string        If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers
+      --enable-debugging-handlers        Enable debugging handlers. Currently /debug/alpha/cache is supported
       --in-cluster                       Use in-cluster authentication and certificate request API (default true)
-      --enable-debugging-handlers        Enable debugging handlers on the metrics port (http). Currently /debug/alpha/cache is supported (default false) [ALPHA]
       --kube-api string                  (out-of-cluster) The url to the API server
       --kubeconfig string                (out-of-cluster) Absolute path to the API server kubeconfig file
       --log_backtrace_at traceLocation   when logging hits line file:N, emit a stack trace (default :0)
@@ -156,11 +157,11 @@ Usage of amazon-eks-pod-identity-webhook:
       --log_file_max_size uint           Defines the maximum size a log file can grow to. Unit is megabytes. If the value is 0, the maximum file size is unlimited. (default 1800)
       --logtostderr                      log to standard error instead of files (default true)
       --metrics-port int                 Port to listen on for metrics and healthz (http) (default 9999)
-      --namespace string                 (in-cluster) The namespace name this webhook and the tls secret resides in (default "eks")
+      --namespace string                 (in-cluster) The namespace name this webhook, the TLS secret, and configmap resides in (default "eks")
       --port int                         Port to listen on (default 443)
       --service-name string              (in-cluster) The service name fronting this webhook (default "pod-identity-webhook")
       --skip_headers                     If true, avoid header prefixes in the log messages
-      --skip_log_headers                 If true, avoid headers when openning log files
+      --skip_log_headers                 If true, avoid headers when opening log files
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
       --sts-regional-endpoint false      Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to false.
       --tls-cert string                  (out-of-cluster) TLS certificate file path (default "/etc/webhook/certs/tls.crt")
@@ -172,6 +173,7 @@ Usage of amazon-eks-pod-identity-webhook:
   -v, --v Level                          number for the log level verbosity
       --version                          Display the version and exit
       --vmodule moduleSpec               comma-separated list of pattern=N settings for file-filtered logging
+      --watch-config-map                 Enables watching serviceaccounts that are configured through the pod-identity-webhook configmap instead of using annotations
 ```
 
 ### AWS_DEFAULT_REGION Injection
@@ -190,6 +192,37 @@ account](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_en
 
 You can also enable this per-service account with the annotation
 `eks.amazonaws.com/sts-regional-endpoints` set to `"true"`.
+
+### pod-identity-webhook ConfigMap
+
+The purpose of the `pod-identity-webhook` ConfigMap is to simplify the mapping of IAM roles and ServiceAccount
+when using tools/installers like [kOps](https://kops.sigs.k8s.io/) that directly manage IAM roles and trust policies. When using these tools,
+users do not need to configure annotations on the ServiceAccounts as the tools already know the relationship can relay it to the webhook.
+
+When the `watch-config-map` flag is set to `true`, the webhook will watch the
+`pod-identity-webhook` ConfigMap in the namespace configured by the `--namespace` flag
+for additional ServiceAccounts. The webhook will mutate Pods configured to use these
+ServiceAccounts even if they have no annotations.
+
+Should the same ServiceAccount both be referenced both in the ConfigMap and have annotations, the annotations takes presedence. 
+
+Here is an example ConfigMap:
+
+```
+apiVersion: v1
+data:
+  config: '{"default/myserviceaccount":{"RoleARN":"arn:aws-test:iam::123456789012:role/myserviceaccount.default.sa.minimal.example.com","Audience":"amazonaws.com","UseRegionalSTS":true,"TokenExpiration":0},"myapp/myotherserviceaccount":{"RoleARN":"arn:aws-test:iam::123456789012:role/myotherserviceaccount.myapp.sa.minimal.example.com","Audience":"amazonaws.com","UseRegionalSTS":true,"TokenExpiration":0},"test-*/myserviceaccount":{"RoleARN":"arn:aws-test:iam::123456789012:role/myserviceaccount.test-wildcard.sa.minimal.example.com","Audience":"amazonaws.com","UseRegionalSTS":true,"TokenExpiration":0}}'
+kind: ConfigMap
+metadata:
+  annotations:
+    prometheus.io/port: "443"
+    prometheus.io/scheme: https
+    prometheus.io/scrape: "true"
+  creationTimestamp: null
+  name: pod-identity-webhook
+  namespace: kube-system
+```
+
 
 ## Container Images
 

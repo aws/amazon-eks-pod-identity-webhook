@@ -59,7 +59,7 @@ func main() {
 	// in-cluster TLS options
 	inCluster := flag.Bool("in-cluster", true, "Use in-cluster authentication and certificate request API")
 	serviceName := flag.String("service-name", "pod-identity-webhook", "(in-cluster) The service name fronting this webhook")
-	namespaceName := flag.String("namespace", "eks", "(in-cluster) The namespace name this webhook and the tls secret resides in")
+	namespaceName := flag.String("namespace", "eks", "(in-cluster) The namespace name this webhook, the TLS secret, and configmap resides in")
 	tlsSecret := flag.String("tls-secret", "pod-identity-webhook", "(in-cluster) The secret name for storing the TLS serving cert")
 
 	// annotation/volume configurations
@@ -69,7 +69,7 @@ func main() {
 	tokenExpiration := flag.Int64("token-expiration", pkg.DefaultTokenExpiration, "The token expiration")
 	region := flag.String("aws-default-region", "", "If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers")
 	regionalSTS := flag.Bool("sts-regional-endpoint", false, "Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to `false`.")
-	watchConfigMap := flag.Bool("watch-config-map", false, "Whether to watch the pod-identity-webhook ConfigMap for additional Service Accounts. Defaults to `false`.")
+	watchConfigMap := flag.Bool("watch-config-map", false, "Enables watching serviceaccounts that are configured through the pod-identity-webhook configmap instead of using annotations")
 
 	version := flag.Bool("version", false, "Display the version and exit")
 

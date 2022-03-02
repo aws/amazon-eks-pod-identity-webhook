@@ -73,6 +73,9 @@ func init() {
 	prometheus.MustRegister(webhookUsage)
 }
 
+// Get will return the cached configuration of the given ServiceAccount.
+// It will first look at the set of ServiceAccounts configured using annotations. If none are found, it will look for any
+// ServiceAccount configured through the pod-identity-webhook ConfigMap.
 func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	{
