@@ -1,10 +1,12 @@
 package cache
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
@@ -12,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/klog"
 )
 
 func TestSaCache(t *testing.T) {
@@ -26,7 +29,7 @@ func TestSaCache(t *testing.T) {
 	}
 
 	cache := &serviceAccountCache{
-		cache:            map[string]*CacheResponse{},
+		saCache:          map[string]*CacheResponse{},
 		defaultAudience:  "sts.amazonaws.com",
 		annotationPrefix: "eks.amazonaws.com",
 		webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
@@ -130,7 +133,7 @@ func TestNonRegionalSTS(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			informer := informerFactory.Core().V1().ServiceAccounts()
 
-			cache := New(audience, "eks.amazonaws.com", tc.defaultRegionalSTS, 86400, informer)
+			cache := New(audience, "eks.amazonaws.com", tc.defaultRegionalSTS, 86400, informer, nil)
 			cache.(*serviceAccountCache).hasSynced = func() bool { return true }
 			stop := make(chan struct{})
 			informerFactory.Start(stop)
@@ -145,7 +148,7 @@ func TestNonRegionalSTS(t *testing.T) {
 			}
 
 			err = wait.ExponentialBackoff(wait.Backoff{Duration: 10 * time.Millisecond, Factor: 1.0, Steps: 3}, func() (bool, error) {
-				return len(cache.(*serviceAccountCache).cache) != 0, nil
+				return len(cache.(*serviceAccountCache).saCache) != 0, nil
 			})
 			if err != nil {
 				t.Fatalf("cache never called addSA: %v", err)
@@ -166,4 +169,212 @@ func TestNonRegionalSTS(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPopulateCacheFromCM(t *testing.T) {
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-identity-webhook",
+		},
+		Data: map[string]string{
+			"config": "{\"myns/mysa\":{\"RoleARN\":\"arn:aws:iam::111122223333:role/s3-reader\"},\"myns2/mysa2\": {\"RoleARN\":\"arn:aws:iam::111122223333:role/s3-reader2\"}}",
+		},
+	}
+	cm2 := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-identity-webhook",
+		},
+		Data: map[string]string{
+			"config": "{\"myns/mysa\":{\"RoleARN\":\"arn:aws:iam::111122223333:role/s3-reader\"}}",
+		},
+	}
+
+	c := serviceAccountCache{
+		cmCache: make(map[string]*CacheResponse),
+	}
+
+	{
+		err := c.populateCacheFromCM(nil, cm)
+		if err != nil {
+			t.Errorf("failed to build cache: %v", err)
+		}
+
+		role, _, _, _ := c.Get("mysa2", "myns2")
+		if role == "" {
+			t.Errorf("cloud not find entry that should have been added")
+		}
+	}
+
+	{
+		err := c.populateCacheFromCM(cm, cm)
+		if err != nil {
+			t.Errorf("failed to build cache: %v", err)
+		}
+
+		role, _, _, _ := c.Get("mysa2", "myns2")
+		if role == "" {
+			t.Errorf("cloud not find entry that should have been added")
+		}
+	}
+
+	{
+		err := c.populateCacheFromCM(cm, cm2)
+		if err != nil {
+			t.Errorf("failed to build cache: %v", err)
+		}
+
+		role, _, _, _ := c.Get("mysa2", "myns2")
+		if role != "" {
+			t.Errorf("found entry that should have been removed")
+		}
+	}
+
+}
+
+func TestSAAnnotationRemoval(t *testing.T) {
+	roleArn := "arn:aws:iam::111122223333:role/s3-reader"
+	oldSA := &v1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"eks.amazonaws.com/role-arn":         roleArn,
+				"eks.amazonaws.com/token-expiration": "3600",
+			},
+		},
+	}
+
+	c := serviceAccountCache{
+		saCache:          make(map[string]*CacheResponse),
+		annotationPrefix: "eks.amazonaws.com",
+		webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
+	}
+
+	c.addSA(oldSA)
+
+	{
+		gotRoleArn, _, _, _ := c.Get("default", "default")
+		if gotRoleArn != roleArn {
+			t.Errorf("got roleArn %q, expected %q", gotRoleArn, roleArn)
+		}
+	}
+
+	newSA := oldSA.DeepCopy()
+	newSA.ObjectMeta.Annotations = make(map[string]string)
+
+	c.addSA(newSA)
+
+	{
+		gotRoleArn, _, _, _ := c.Get("default", "default")
+		if gotRoleArn != "" {
+			t.Errorf("got roleArn %v, expected %q", gotRoleArn, "")
+		}
+	}
+}
+
+func TestCachePrecedence(t *testing.T) {
+	roleArn := "arn:aws:iam::111122223333:role/s3-reader"
+	saTokenExpiration := 3600
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-identity-webhook",
+		},
+		Data: map[string]string{
+			"config": "{\"myns/mysa\":{\"RoleARN\":\"arn:aws:iam::111122223333:role/s3-reader\"},\"myns2/mysa2\": {\"RoleARN\":\"arn:aws:iam::111122223333:role/s3-reader2\"}}",
+		},
+	}
+	cm2 := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-identity-webhook",
+		},
+		Data: map[string]string{
+			"config": "{\"myns/mysa\":{\"RoleARN\":\"arn:aws:iam::111122223333:role/s3-reader\"}}",
+		},
+	}
+	sa := &v1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mysa2",
+			Namespace: "myns2",
+			Annotations: map[string]string{
+				"eks.amazonaws.com/role-arn":         roleArn,
+				"eks.amazonaws.com/token-expiration": fmt.Sprintf("%d", saTokenExpiration),
+			},
+		},
+	}
+
+	sa2 := sa.DeepCopy()
+	sa2.ObjectMeta.Annotations = make(map[string]string)
+
+	c := serviceAccountCache{
+		saCache:                make(map[string]*CacheResponse),
+		cmCache:                make(map[string]*CacheResponse),
+		defaultTokenExpiration: pkg.DefaultTokenExpiration,
+		annotationPrefix:       "eks.amazonaws.com",
+		webhookUsage:           prometheus.NewGauge(prometheus.GaugeOpts{}),
+	}
+
+	{
+		c.addSA(sa)
+		err := c.populateCacheFromCM(nil, cm)
+		if err != nil {
+			t.Errorf("failed to build cache: %v", err)
+		}
+
+		role, _, _, exp := c.Get("mysa2", "myns2")
+		if role == "" {
+			t.Errorf("could not find entry that should have been added")
+		}
+		// We expect that the SA still holds presedence
+		if exp != int64(saTokenExpiration) {
+			t.Errorf("expected tokenExpiration %d, got %d", saTokenExpiration, exp)
+		}
+	}
+
+	{
+		err := c.populateCacheFromCM(cm, cm2)
+		if err != nil {
+			t.Errorf("failed to build cache: %v", err)
+		}
+
+		// Removing sa2 from CM, but SA still exists
+		role, _, _, exp := c.Get("mysa2", "myns2")
+		if role == "" {
+			t.Errorf("could not find entry that should still exist")
+		}
+
+		// Note that Get returns default expiration if mapping is not found in the cache.
+		if exp != int64(saTokenExpiration) {
+			t.Errorf("expected tokenExpiration %d, got %d", saTokenExpiration, exp)
+		}
+	}
+
+	{
+		// Removing annotation
+		c.addSA(sa2)
+
+		// Neither cache should return any hits now
+		role, _, _, _ := c.Get("myns2", "mysa2")
+		if role != "" {
+			t.Errorf("found entry that should not exist")
+		}
+
+	}
+	{
+		klog.Info("CM")
+		// Adding CM back in. This time only the CM entry exists.
+		err := c.populateCacheFromCM(nil, cm)
+		if err != nil {
+			t.Errorf("failed to build cache: %v", err)
+		}
+
+		role, _, _, exp := c.Get("mysa2", "myns2")
+		if role == "" {
+			t.Errorf("cloud not find entry that should have been added")
+		}
+
+		if exp != pkg.DefaultTokenExpiration {
+			t.Errorf("expected tokenExpiration %d, got %d", pkg.DefaultTokenExpiration, exp)
+		}
+	}
+
 }
