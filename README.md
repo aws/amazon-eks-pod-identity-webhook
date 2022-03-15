@@ -56,9 +56,6 @@ certificates API.
         eks.amazonaws.com/role-arn: "arn:aws:iam::111122223333:role/s3-reader"
         # optional: Defaults to "sts.amazonaws.com" if not set
         eks.amazonaws.com/audience: "sts.amazonaws.com"
-        # optional: When set to "true", adds AWS_STS_REGIONAL_ENDPOINTS env var
-        #   to containers
-        eks.amazonaws.com/sts-regional-endpoints: "true"
         # optional: Defaults to 86400 for expirationSeconds if not set
         #   Note: This value can be overwritten if specified in the pod 
         #         annotation as shown in the next step.
@@ -182,7 +179,7 @@ When the `aws-default-region` flag is set this webhook will inject `AWS_DEFAULT_
 
 ### AWS_STS_REGIONAL_ENDPOINTS Injection
 
-When the `sts-regional-endpoint` flag is set to `true`, the webhook will
+The `sts-regional-endpoint` flag is set to `true` by default. The webhook will
 inject the environment variable `AWS_STS_REGIONAL_ENDPOINTS` with the value set
 to `regional`. This environment variable will configure the AWS SDKs to perform
 the `sts:AssumeRoleWithWebIdentity` call to get credentials from the regional
@@ -190,8 +187,8 @@ endpoint, instead of the global endpoint in `us-east-1`. This is desirable in
 almost all cases, unless the STS regional endpoint is [disabled in your
 account](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_enable-regions.html).
 
-You can also enable this per-service account with the annotation
-`eks.amazonaws.com/sts-regional-endpoints` set to `"true"`.
+You can also disable this per-service account with the annotation
+`eks.amazonaws.com/sts-regional-endpoints` set to `"false"`.
 
 ### pod-identity-webhook ConfigMap
 
