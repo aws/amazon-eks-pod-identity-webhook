@@ -1,4 +1,4 @@
-FROM golang AS builder
+FROM golang:1.19 AS builder
 
 WORKDIR $GOPATH/src/github.com/aws/amazon-eks-pod-identity-webhook
 COPY . ./
