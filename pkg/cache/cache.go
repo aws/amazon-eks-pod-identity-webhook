@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -55,6 +56,8 @@ type serviceAccountCache struct {
 	annotationPrefix       string
 	defaultAudience        string
 	defaultRegionalSTS     bool
+	composeRoleArn         bool
+	identity               ec2metadata.EC2InstanceIdentityDocument
 	defaultTokenExpiration int64
 	webhookUsage           prometheus.Gauge
 }
@@ -142,6 +145,20 @@ func (c *serviceAccountCache) ToJSON() string {
 
 func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 	arn, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.RoleARNAnnotation]
+
+	if !strings.Contains(arn, "arn:") && c.composeRoleArn {
+		var accountId, partition string
+		identity := c.identity
+
+		accountId = identity.AccountID
+		if strings.Contains(identity.Region, "cn-") {
+			partition = "aws-cn"
+		} else {
+			partition = "aws"
+		}
+		arn = fmt.Sprintf("arn:%s:iam::%s:role/%s", partition, accountId, arn)
+	}
+
 	resp := &CacheResponse{}
 	if ok {
 		resp.RoleARN = arn
@@ -187,7 +204,7 @@ func (c *serviceAccountCache) setCM(name, namespace string, resp *CacheResponse)
 	c.cmCache[namespace+"/"+name] = resp
 }
 
-func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenExpiration int64, saInformer coreinformers.ServiceAccountInformer, cmInformer coreinformers.ConfigMapInformer) ServiceAccountCache {
+func New(defaultAudience, prefix string, defaultRegionalSTS, composeRoleArn bool, defaultTokenExpiration int64, saInformer coreinformers.ServiceAccountInformer, cmInformer coreinformers.ConfigMapInformer, identity ec2metadata.EC2InstanceIdentityDocument) ServiceAccountCache {
 	hasSynced := func() bool {
 		if cmInformer != nil {
 			return saInformer.Informer().HasSynced() && cmInformer.Informer().HasSynced()
@@ -195,12 +212,15 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 			return saInformer.Informer().HasSynced()
 		}
 	}
+
 	c := &serviceAccountCache{
 		saCache:                map[string]*CacheResponse{},
 		cmCache:                map[string]*CacheResponse{},
 		defaultAudience:        defaultAudience,
 		annotationPrefix:       prefix,
 		defaultRegionalSTS:     defaultRegionalSTS,
+		composeRoleArn:         composeRoleArn,
+		identity:               identity,
 		defaultTokenExpiration: defaultTokenExpiration,
 		hasSynced:              hasSynced,
 		webhookUsage:           webhookUsage,

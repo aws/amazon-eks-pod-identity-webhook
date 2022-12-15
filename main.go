@@ -30,6 +30,8 @@ import (
 	cachedebug "github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache/debug"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cert"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/handler"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	flag "github.com/spf13/pflag"
 	"k8s.io/client-go/informers"
@@ -70,6 +72,7 @@ func main() {
 	region := flag.String("aws-default-region", "", "If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers")
 	regionalSTS := flag.Bool("sts-regional-endpoint", false, "Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to `false`.")
 	watchConfigMap := flag.Bool("watch-config-map", false, "Enables watching serviceaccounts that are configured through the pod-identity-webhook configmap instead of using annotations")
+	composeRoleArn := flag.Bool("compose-role-arn", false, "Whether to compose a fully formed role arn when we detect one that is not fully qualified")
 
 	version := flag.Bool("version", false, "Display the version and exit")
 
@@ -115,13 +118,27 @@ func main() {
 	saInformer := informerFactory.Core().V1().ServiceAccounts()
 
 	*tokenExpiration = pkg.ValidateMinTokenExpiration(*tokenExpiration)
+
+	sess, err := session.NewSession()
+	if err != nil {
+		klog.Fatalf("Error creating session: %v", err.Error())
+	}
+
+	metadataClient := ec2metadata.New(sess)
+	identity, err := metadataClient.GetInstanceIdentityDocument()
+	if err != nil {
+		klog.Fatalf("Error getting instance identity document: %v", err.Error())
+	}
+
 	saCache := cache.New(
 		*audience,
 		*annotationPrefix,
 		*regionalSTS,
+		*composeRoleArn,
 		*tokenExpiration,
 		saInformer,
 		cmInformer,
+		identity,
 	)
 	stop := make(chan struct{})
 	informerFactory.Start(stop)
