@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
+	awsarn "github.com/aws/aws-sdk-go/aws/arn"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
@@ -133,10 +135,12 @@ func TestNonRegionalSTS(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			informer := informerFactory.Core().V1().ServiceAccounts()
 
-			cache := New(audience, "eks.amazonaws.com", tc.defaultRegionalSTS, 86400, informer, nil)
-			cache.(*serviceAccountCache).hasSynced = func() bool { return true }
+			testIdentity := ec2metadata.EC2InstanceIdentityDocument{}
+
+			cache := New(audience, "eks.amazonaws.com", tc.defaultRegionalSTS, false, 86400, informer, nil, testIdentity)
 			stop := make(chan struct{})
 			informerFactory.Start(stop)
+			informerFactory.WaitForCacheSync(stop)
 			cache.Start(stop)
 			defer close(stop)
 
@@ -377,4 +381,58 @@ func TestCachePrecedence(t *testing.T) {
 		}
 	}
 
+}
+
+func TestRoleArnComposition(t *testing.T) {
+	role := "s3-reader"
+	audience := "sts.amazonaws.com"
+	tokenExpiration := "3600"
+	composeRoleArn := true
+	region := "test"
+	accountID := "111122223333"
+	resource := fmt.Sprintf("role/%s", role)
+
+	testSA := &v1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"eks.amazonaws.com/role-arn":         role,
+				"eks.amazonaws.com/token-expiration": tokenExpiration,
+			},
+		},
+	}
+
+	testIdentity := ec2metadata.EC2InstanceIdentityDocument{
+		Region:    region,
+		AccountID: accountID,
+	}
+
+	fakeClient := fake.NewSimpleClientset(testSA)
+	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	informer := informerFactory.Core().V1().ServiceAccounts()
+
+	cache := New(audience, "eks.amazonaws.com", true, composeRoleArn, 86400, informer, nil, testIdentity)
+	stop := make(chan struct{})
+	informerFactory.Start(stop)
+	informerFactory.WaitForCacheSync(stop)
+
+	cache.Start(stop)
+	defer close(stop)
+
+	var roleArn string
+	err := wait.ExponentialBackoff(wait.Backoff{Duration: 10 * time.Millisecond, Factor: 1.0, Steps: 3}, func() (bool, error) {
+		roleArn, _, _, _ = cache.Get("default", "default")
+		return roleArn != "", nil
+	})
+	if err != nil {
+		t.Fatalf("cache never returned role arn %v", err)
+	}
+
+	arn, err := awsarn.Parse(roleArn)
+
+	assert.NoError(t, err, "Expected ARN parsing to succeed")
+	assert.True(t, awsarn.IsARN(roleArn), "Expected ARN validation to be true, got false")
+	assert.Equal(t, accountID, arn.AccountID, "Expected account ID to be %s, got %s", accountID, arn.AccountID)
+	assert.Equal(t, resource, arn.Resource, "Expected resource to be %s, got %s", resource, arn.Resource)
 }
