@@ -53,7 +53,7 @@ if [ $_bucket_name == "None" ]; then
     fi
 fi
 echo "export S3_BUCKET=$S3_BUCKET"
-export HOSTNAME=s3-$AWS_REGION.amazonaws.com
+export HOSTNAME=s3.$AWS_REGION.amazonaws.com
 export ISSUER_HOSTPATH=$HOSTNAME/$S3_BUCKET
 ```
 
