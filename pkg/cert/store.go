@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/certificate"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // Compile time check that secretCertStore implements the certificate.Store interface

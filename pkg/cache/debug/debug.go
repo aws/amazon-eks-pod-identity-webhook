@@ -3,7 +3,7 @@ package debug
 import (
 	"fmt"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"net/http"
 )
 
