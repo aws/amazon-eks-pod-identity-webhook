@@ -17,7 +17,7 @@ endif
 REGISTRY_ID?=602401143452
 IMAGE_NAME?=eks/pod-identity-webhook
 REGION?=us-west-2
-IMAGE?=$(REGISTRY_ID).dkr.ecr.$(REGION).amazonaws.com/$(IMAGE_NAME)
+IMAGE?=$(REGISTRY_ID).dkr.ecr.$(REGION).amazonaws.com/$(IMAGE_NAME):latest
 
 test:
 	go test -coverprofile=coverage.out ./...
@@ -70,30 +70,16 @@ cluster-up: deploy-config
 cluster-down: delete-config
 
 prep-config:
-	@echo 'Generating certs and deploying into active cluster...'
-	cat deploy/deployment-base.yaml | sed -e "s|IMAGE|${IMAGE}|g" | tee deploy/deployment.yaml
-	cat deploy/mutatingwebhook.yaml | hack/webhook-patch-ca-bundle.sh > deploy/mutatingwebhook-ca-bundle.yaml
+	@echo 'Overriding specified docker image...'
+	cd deploy && kustomize edit set image "eks-pod-identity-webhook-image=${IMAGE}"
 
 deploy-config: prep-config
 	@echo 'Applying configuration to active cluster...'
-	kubectl apply -f deploy/auth.yaml
-	kubectl apply -f deploy/deployment.yaml
-	kubectl apply -f deploy/service.yaml
-	kubectl apply -f deploy/mutatingwebhook-ca-bundle.yaml
-	until kubectl get csr -o \
-		jsonpath='{.items[?(@.spec.username=="system:serviceaccount:default:pod-identity-webhook")].metadata.name}' | \
-		grep -m 1 "csr-"; \
-		do echo "Waiting for CSR to be created" && sleep 1 ; \
-	done
-	kubectl certificate approve $$(kubectl get csr -o jsonpath='{.items[?(@.spec.username=="system:serviceaccount:default:pod-identity-webhook")].metadata.name}')
+	kubectl apply -k deploy
 
 delete-config:
 	@echo 'Tearing down mutating controller and associated resources...'
-	kubectl delete -f deploy/mutatingwebhook-ca-bundle.yaml
-	kubectl delete -f deploy/service.yaml
-	kubectl delete -f deploy/deployment.yaml
-	kubectl delete -f deploy/auth.yaml
-	kubectl delete secret pod-identity-webhook
+	kubectl delete -k deploy
 
 clean::
 	rm -rf ./amazon-eks-pod-identity-webhook
