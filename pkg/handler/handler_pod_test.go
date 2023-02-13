@@ -26,9 +26,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
+
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 )
 
 var fixtureDir = "./testdata"

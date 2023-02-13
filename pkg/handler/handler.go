@@ -25,8 +25,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
+	"gomodules.xyz/jsonpatch/v2"
 	"k8s.io/api/admission/v1beta1"
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -34,6 +33,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/klog/v2"
+
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
 )
 
 func init() {
@@ -93,12 +95,6 @@ type Modifier struct {
 	Cache            cache.ServiceAccountCache
 	volName          string
 	tokenName        string
-}
-
-type patchOperation struct {
-	Op    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value interface{} `json:"value,omitempty"`
 }
 
 func logContext(podName, podGenerateName, serviceAccountName, namespace string) string {
@@ -254,8 +250,10 @@ func (m *Modifier) parsePodAnnotations(pod *corev1.Pod, serviceAccountTokenExpir
 }
 
 // getPodSpecPatch gets the patch operation to be applied to the given Pod
-func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, roleName, audience string, regionalSTS bool, tokenExpiration int64, containersToSkip map[string]bool) ([]patchOperation, bool) {
+func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, roleName, audience string, regionalSTS bool, tokenExpiration int64, containersToSkip map[string]bool) ([]jsonpatch.JsonPatchOperation, bool) {
 	tokenFilePath := filepath.Join(m.MountPath, m.tokenName)
+	// Make a copy of the original pod to compare against the modified pod and generate the JSON patch
+	original := pod.DeepCopy()
 
 	betaNodeSelector, _ := pod.Spec.NodeSelector["beta.kubernetes.io/os"]
 	nodeSelector, _ := pod.Spec.NodeSelector["kubernetes.io/os"]
@@ -268,26 +266,22 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, roleName, audience string, r
 
 	var changed bool
 
-	var initContainers = []corev1.Container{}
 	for i := range pod.Spec.InitContainers {
-		container := pod.Spec.InitContainers[i]
+		container := &pod.Spec.InitContainers[i]
 		if _, ok := containersToSkip[container.Name]; ok {
 			klog.V(4).Infof("Container %s was annotated to be skipped", container.Name)
-		} else if m.addEnvToContainer(&container, tokenFilePath, roleName, regionalSTS) {
+		} else if m.addEnvToContainer(container, tokenFilePath, roleName, regionalSTS) {
 			changed = true
 		}
-		initContainers = append(initContainers, container)
 	}
 
-	var containers = []corev1.Container{}
 	for i := range pod.Spec.Containers {
-		container := pod.Spec.Containers[i]
+		container := &pod.Spec.Containers[i]
 		if _, ok := containersToSkip[container.Name]; ok {
 			klog.V(4).Infof("Container %s was annotated to be skipped", container.Name)
-		} else if m.addEnvToContainer(&container, tokenFilePath, roleName, regionalSTS) {
+		} else if m.addEnvToContainer(container, tokenFilePath, roleName, regionalSTS) {
 			changed = true
 		}
-		containers = append(containers, container)
 	}
 
 	volume := corev1.Volume{
@@ -307,8 +301,6 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, roleName, audience string, r
 		},
 	}
 
-	patch := []patchOperation{}
-
 	// skip adding volume if it already exists
 	volExists := false
 	for _, vol := range pod.Spec.Volumes {
@@ -318,40 +310,26 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, roleName, audience string, r
 	}
 
 	if !volExists {
-		volPatch := patchOperation{
-			Op:    "add",
-			Path:  "/spec/volumes/0",
-			Value: volume,
-		}
-
-		if pod.Spec.Volumes == nil {
-			volPatch = patchOperation{
-				Op:   "add",
-				Path: "/spec/volumes",
-				Value: []corev1.Volume{
-					volume,
-				},
-			}
-		}
-
-		patch = append(patch, volPatch)
+		pod.Spec.Volumes = append(pod.Spec.Volumes, volume)
 		changed = true
 	}
 
-	patch = append(patch, patchOperation{
-		Op:    "add",
-		Path:  "/spec/containers",
-		Value: containers,
-	})
-
-	if len(initContainers) > 0 {
-		patch = append(patch, patchOperation{
-			Op:    "add",
-			Path:  "/spec/initContainers",
-			Value: initContainers,
-		})
+	orig, err := json.Marshal(original)
+	if err != nil {
+		klog.Errorf("Failed to marshal original pod: %v", err)
+		return nil, changed
 	}
-	return patch, changed
+	mod, err := json.Marshal(pod)
+	if err != nil {
+		klog.Errorf("Failed to marshal modified pod: %v", err)
+		return nil, changed
+	}
+	operations, err := jsonpatch.CreatePatch(orig, mod)
+	if err != nil {
+		klog.Errorf("Failed to create patch: %v", err)
+		return nil, changed
+	}
+	return operations, changed
 }
 
 // MutatePod takes a AdmissionReview, mutates the pod, and returns an AdmissionResponse
