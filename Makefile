@@ -78,12 +78,14 @@ deploy-config: prep-config
 	kubectl apply -f deploy/auth.yaml
 	kubectl apply -f deploy/deployment.yaml
 	kubectl apply -f deploy/service.yaml
+	kubectl apply -f deploy/mutatingwebhook.yaml
 
 delete-config:
 	@echo 'Tearing down mutating controller and associated resources...'
 	kubectl delete -f deploy/service.yaml
 	kubectl delete -f deploy/deployment.yaml
 	kubectl delete -f deploy/auth.yaml
+	kubectl delete -f deploy/mutatingwebhook.yaml
 	kubectl delete secret pod-identity-webhook-cert
 
 clean::
