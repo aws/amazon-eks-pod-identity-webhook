@@ -388,9 +388,22 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 	// audience:        serviceaccount annotation > flag
 	// regionalSTS:     serviceaccount annotation > flag
 	// tokenExpiration: pod annotation > serviceaccount annotation > flag
-	podRole, audience, regionalSTS, tokenExpiration := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
-
+	podRole, audience, regionalSTS, tokenExpiration, err := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
 	// determine whether to perform mutation
+	if err != nil {
+		klog.Errorf("Pod was not mutated. Reason: "+
+			"Service account was not found in cache and was expected. %s",
+			logContext(pod.Name,
+				pod.GenerateName,
+				pod.Spec.ServiceAccountName,
+				pod.Namespace))
+		return &v1beta1.AdmissionResponse{
+			Allowed: false,
+			Result: &metav1.Status{
+				Message: err.Error(),
+			},
+		}
+	}
 	if podRole == "" {
 		klog.V(4).Infof("Pod was not mutated. Reason: "+
 			"Service account did not have the right annotations or was not found in the cache. %s",

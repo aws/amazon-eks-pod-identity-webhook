@@ -41,7 +41,7 @@ type CacheResponse struct {
 
 type ServiceAccountCache interface {
 	Start(stop chan struct{})
-	Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64)
+	Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64, err error)
 	// ToJSON returns cache contents as JSON string
 	ToJSON() string
 }
@@ -76,22 +76,26 @@ func init() {
 // Get will return the cached configuration of the given ServiceAccount.
 // It will first look at the set of ServiceAccounts configured using annotations. If none are found, it will look for any
 // ServiceAccount configured through the pod-identity-webhook ConfigMap.
-func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
+func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64, err error) {
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
+	var respSA *CacheResponse
 	{
-		resp := c.getSA(name, namespace)
-		if resp != nil && resp.RoleARN != "" {
-			return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration
+		respSA = c.getSA(name, namespace)
+		if respSA != nil && respSA.RoleARN != "" {
+			return respSA.RoleARN, respSA.Audience, respSA.UseRegionalSTS, respSA.TokenExpiration, nil
 		}
 	}
 	{
-		resp := c.getCM(name, namespace)
-		if resp != nil {
-			return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration
+		respCM := c.getCM(name, namespace)
+		if respCM != nil {
+			return respCM.RoleARN, respCM.Audience, respCM.UseRegionalSTS, respCM.TokenExpiration, nil
 		}
 	}
-	klog.V(5).Infof("Service account %s/%s not found in cache", namespace, name)
-	return "", "", false, pkg.DefaultTokenExpiration
+	if respSA == nil {
+		return "", "", false, pkg.DefaultTokenExpiration, fmt.Errorf("service account %s/%s not found in cache and one is expected", namespace, name)
+	}
+
+	return "", "", false, pkg.DefaultTokenExpiration, nil
 }
 
 func (c *serviceAccountCache) getSA(name, namespace string) *CacheResponse {

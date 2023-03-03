@@ -2,9 +2,10 @@ package cache
 
 import (
 	"encoding/json"
-	"k8s.io/api/core/v1"
 	"strconv"
 	"sync"
+
+	"k8s.io/api/core/v1"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 )
@@ -44,14 +45,14 @@ var _ ServiceAccountCache = &FakeServiceAccountCache{}
 func (f *FakeServiceAccountCache) Start(chan struct{}) {}
 
 // Get gets a service account from the cache
-func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
+func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64, err error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	resp, ok := f.cache[namespace+"/"+name]
 	if !ok {
-		return "", "", false, pkg.DefaultTokenExpiration
+		return "", "", false, pkg.DefaultTokenExpiration, nil
 	}
-	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration
+	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration, nil
 }
 
 // Add adds a cache entry
