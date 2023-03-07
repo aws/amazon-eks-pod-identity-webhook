@@ -18,6 +18,7 @@ package cache
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -107,11 +108,14 @@ func (c *serviceAccountCache) getSA(name, namespace string) *CacheResponse {
 func (c *serviceAccountCache) getCM(name, namespace string) *CacheResponse {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	resp, ok := c.cmCache[namespace+"/"+name]
-	if !ok {
-		return nil
+	for key, resp := range c.cmCache {
+		pattern := strings.Replace(key, "*", ".*", -1) // replace * with .*
+		regex := regexp.MustCompile(pattern)
+		if regex.MatchString(namespace + "/" + name) {
+			return resp
+		}
 	}
-	return resp
+	return nil
 }
 
 func (c *serviceAccountCache) popSA(name, namespace string) {
