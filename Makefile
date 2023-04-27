@@ -25,7 +25,7 @@ test:
 
 docker:
 	@echo 'Building image $(IMAGE)...'
-	docker build --no-cache -t $(IMAGE) .
+	docker buildx build --output=type=docker --platform linux/amd64 --no-cache -t $(IMAGE) .
 
 push: docker
 	if ! aws ecr get-login-password --region $(REGION) | docker login --username AWS --password-stdin $(REGISTRY_ID).dkr.ecr.$(REGION).amazonaws.com; then \
