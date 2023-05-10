@@ -119,15 +119,18 @@ func main() {
 
 	*tokenExpiration = pkg.ValidateMinTokenExpiration(*tokenExpiration)
 
-	sess, err := session.NewSession()
-	if err != nil {
-		klog.Fatalf("Error creating session: %v", err.Error())
-	}
+	var identity ec2metadata.EC2InstanceIdentityDocument
+	if *composeRoleArn {
+		sess, err := session.NewSession()
+		if err != nil {
+			klog.Fatalf("Error creating session: %v", err.Error())
+		}
 
-	metadataClient := ec2metadata.New(sess)
-	identity, err := metadataClient.GetInstanceIdentityDocument()
-	if err != nil {
-		klog.Fatalf("Error getting instance identity document: %v", err.Error())
+		metadataClient := ec2metadata.New(sess)
+		identity, err = metadataClient.GetInstanceIdentityDocument()
+		if err != nil {
+			klog.Fatalf("Error getting instance identity document: %v", err.Error())
+		}
 	}
 
 	saCache := cache.New(

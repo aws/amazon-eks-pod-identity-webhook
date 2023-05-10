@@ -153,6 +153,12 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 		accountId = identity.AccountID
 		if strings.Contains(identity.Region, "cn-") {
 			partition = "aws-cn"
+		} else if strings.Contains(identity.Region, "us-gov-") {
+			partition = "aws-us-gov"
+		} else if strings.Contains(identity.Region, "us-iso-") {
+			partition = "aws-iso"
+		} else if strings.Contains(identity.Region, "us-isob-") {
+			partition = "aws-iso-b"
 		} else {
 			partition = "aws"
 		}
