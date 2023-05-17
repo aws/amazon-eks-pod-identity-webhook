@@ -5,11 +5,7 @@ COPY . ./
 ARG TARGETOS TARGETARCH
 RUN GOPROXY=direct CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /webhook -v -a -ldflags="-buildid='' -w -s" .
 
-FROM scratch
-COPY ATTRIBUTIONS.txt /ATTRIBUTIONS.txt
+FROM --platform=$TARGETPLATFORM public.ecr.aws/eks-distro/kubernetes/go-runner:v0.13.0-eks-1-23-latest
 COPY --from=builder /webhook /webhook
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-EXPOSE 443
-VOLUME /etc/webhook
-ENTRYPOINT ["/webhook"]
-CMD ["--logtostderr"]
+ENTRYPOINT ["/go-runner"]
+CMD ["/webhook"]
