@@ -70,6 +70,7 @@ func main() {
 	region := flag.String("aws-default-region", "", "If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers")
 	regionalSTS := flag.Bool("sts-regional-endpoint", false, "Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to `false`.")
 	watchConfigMap := flag.Bool("watch-config-map", false, "Enables watching serviceaccounts that are configured through the pod-identity-webhook configmap instead of using annotations")
+	flag.Int64Var(&pkg.MinTokenExpiration, "min-token-expiration", pkg.MinTokenExpiration, "Minimum token expiration in seconds. The value is used if user configured the shorter duration than this value")
 
 	version := flag.Bool("version", false, "Display the version and exit")
 
@@ -88,6 +89,10 @@ func main() {
 	if *version {
 		fmt.Println(webhookVersion)
 		os.Exit(0)
+	}
+
+	if pkg.MinTokenExpiration < 600 {
+		klog.Fatal("min-token-expiration must be at least 600 (10 min)")
 	}
 
 	config, err := clientcmd.BuildConfigFromFlags(*apiURL, *kubeconfig)

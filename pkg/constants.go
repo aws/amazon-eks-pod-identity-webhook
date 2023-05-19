@@ -18,6 +18,12 @@ const (
 	// Default token expiration in seconds if none is defined,
 	// which is 24hrs as that is max for EKS
 	DefaultTokenExpiration = int64(86400)
-	// 1hr is min for kube-apiserver
+)
+
+var (
+	// Minimum token expiration in seconds.
+	// The value is used if user configured the shorter duration than this value
+	// This value must be at least 600(=10min) due to kubernetes spec (ref ServiceAccountTokenProjection.ExpirationSeconds).
+	// Note: this can be configured by cli flags
 	MinTokenExpiration = int64(3600)
 )
