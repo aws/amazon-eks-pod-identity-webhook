@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
@@ -120,6 +121,7 @@ func main() {
 	*tokenExpiration = pkg.ValidateMinTokenExpiration(*tokenExpiration)
 
 	var identity ec2metadata.EC2InstanceIdentityDocument
+	var composeRoleArnCache cache.ComposeRoleArn
 	if *composeRoleArn {
 		sess, err := session.NewSession()
 		if err != nil {
@@ -131,17 +133,40 @@ func main() {
 		if err != nil {
 			klog.Fatalf("Error getting instance identity document: %v", err.Error())
 		}
+
+		region := identity.Region
+		var partition string
+		switch {
+		case strings.HasPrefix(region, "cn-"):
+			partition = "aws-cn"
+		case strings.HasPrefix(region, "us-gov-"):
+			partition = "aws-us-gov"
+		case strings.HasPrefix(region, "us-iso-"):
+			partition = "aws-iso"
+		case strings.HasPrefix(region, "us-isob-"):
+			partition = "aws-iso-b"
+		default:
+			partition = "aws"
+		}
+
+		composeRoleArnCache = cache.ComposeRoleArn{
+			Enabled: true,
+
+			AccountID: identity.AccountID,
+			Partition: partition,
+			Region:    identity.Region,
+		}
+
 	}
 
 	saCache := cache.New(
 		*audience,
 		*annotationPrefix,
 		*regionalSTS,
-		*composeRoleArn,
 		*tokenExpiration,
 		saInformer,
 		cmInformer,
-		identity,
+		composeRoleArnCache,
 	)
 	stop := make(chan struct{})
 	informerFactory.Start(stop)
