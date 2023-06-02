@@ -23,7 +23,6 @@ import (
 	"sync"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -56,10 +55,17 @@ type serviceAccountCache struct {
 	annotationPrefix       string
 	defaultAudience        string
 	defaultRegionalSTS     bool
-	composeRoleArn         bool
-	identity               ec2metadata.EC2InstanceIdentityDocument
+	composeRoleArn         ComposeRoleArn
 	defaultTokenExpiration int64
 	webhookUsage           prometheus.Gauge
+}
+
+type ComposeRoleArn struct {
+	Enabled bool
+
+	AccountID string
+	Partition string
+	Region    string
 }
 
 // We need a way to know if the webhook is used in a cluster.
@@ -146,23 +152,8 @@ func (c *serviceAccountCache) ToJSON() string {
 func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 	arn, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.RoleARNAnnotation]
 
-	if !strings.Contains(arn, "arn:") && c.composeRoleArn {
-		var accountId, partition string
-		identity := c.identity
-
-		accountId = identity.AccountID
-		if strings.Contains(identity.Region, "cn-") {
-			partition = "aws-cn"
-		} else if strings.Contains(identity.Region, "us-gov-") {
-			partition = "aws-us-gov"
-		} else if strings.Contains(identity.Region, "us-iso-") {
-			partition = "aws-iso"
-		} else if strings.Contains(identity.Region, "us-isob-") {
-			partition = "aws-iso-b"
-		} else {
-			partition = "aws"
-		}
-		arn = fmt.Sprintf("arn:%s:iam::%s:role/%s", partition, accountId, arn)
+	if !strings.Contains(arn, "arn:") && c.composeRoleArn.Enabled {
+		arn = fmt.Sprintf("arn:%s:iam::%s:role/%s", c.composeRoleArn.Partition, c.composeRoleArn.AccountID, arn)
 	}
 
 	resp := &CacheResponse{}
@@ -210,7 +201,7 @@ func (c *serviceAccountCache) setCM(name, namespace string, resp *CacheResponse)
 	c.cmCache[namespace+"/"+name] = resp
 }
 
-func New(defaultAudience, prefix string, defaultRegionalSTS, composeRoleArn bool, defaultTokenExpiration int64, saInformer coreinformers.ServiceAccountInformer, cmInformer coreinformers.ConfigMapInformer, identity ec2metadata.EC2InstanceIdentityDocument) ServiceAccountCache {
+func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenExpiration int64, saInformer coreinformers.ServiceAccountInformer, cmInformer coreinformers.ConfigMapInformer, composeRoleArn ComposeRoleArn) ServiceAccountCache {
 	hasSynced := func() bool {
 		if cmInformer != nil {
 			return saInformer.Informer().HasSynced() && cmInformer.Informer().HasSynced()
@@ -226,7 +217,6 @@ func New(defaultAudience, prefix string, defaultRegionalSTS, composeRoleArn bool
 		annotationPrefix:       prefix,
 		defaultRegionalSTS:     defaultRegionalSTS,
 		composeRoleArn:         composeRoleArn,
-		identity:               identity,
 		defaultTokenExpiration: defaultTokenExpiration,
 		hasSynced:              hasSynced,
 		webhookUsage:           webhookUsage,

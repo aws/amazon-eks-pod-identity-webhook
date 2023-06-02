@@ -8,7 +8,6 @@ import (
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	awsarn "github.com/aws/aws-sdk-go/aws/arn"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
@@ -135,9 +134,9 @@ func TestNonRegionalSTS(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			informer := informerFactory.Core().V1().ServiceAccounts()
 
-			testIdentity := ec2metadata.EC2InstanceIdentityDocument{}
+			testComposeRoleArn := ComposeRoleArn{}
 
-			cache := New(audience, "eks.amazonaws.com", tc.defaultRegionalSTS, false, 86400, informer, nil, testIdentity)
+			cache := New(audience, "eks.amazonaws.com", tc.defaultRegionalSTS, 86400, informer, nil, testComposeRoleArn)
 			stop := make(chan struct{})
 			informerFactory.Start(stop)
 			informerFactory.WaitForCacheSync(stop)
@@ -387,8 +386,6 @@ func TestRoleArnComposition(t *testing.T) {
 	role := "s3-reader"
 	audience := "sts.amazonaws.com"
 	tokenExpiration := "3600"
-	composeRoleArn := true
-	region := "test"
 	accountID := "111122223333"
 	resource := fmt.Sprintf("role/%s", role)
 
@@ -403,16 +400,19 @@ func TestRoleArnComposition(t *testing.T) {
 		},
 	}
 
-	testIdentity := ec2metadata.EC2InstanceIdentityDocument{
-		Region:    region,
-		AccountID: accountID,
+	testComposeRoleArn := ComposeRoleArn{
+		Enabled: true,
+
+		AccountID: "111122223333",
+		Partition: "aws",
+		Region:    "us-west-2",
 	}
 
 	fakeClient := fake.NewSimpleClientset(testSA)
 	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 	informer := informerFactory.Core().V1().ServiceAccounts()
 
-	cache := New(audience, "eks.amazonaws.com", true, composeRoleArn, 86400, informer, nil, testIdentity)
+	cache := New(audience, "eks.amazonaws.com", true, 86400, informer, nil, testComposeRoleArn)
 	stop := make(chan struct{})
 	informerFactory.Start(stop)
 	informerFactory.WaitForCacheSync(stop)
@@ -431,7 +431,7 @@ func TestRoleArnComposition(t *testing.T) {
 
 	arn, err := awsarn.Parse(roleArn)
 
-	assert.NoError(t, err, "Expected ARN parsing to succeed")
+	assert.Nil(t, err, "Expected ARN parsing to succeed")
 	assert.True(t, awsarn.IsARN(roleArn), "Expected ARN validation to be true, got false")
 	assert.Equal(t, accountID, arn.AccountID, "Expected account ID to be %s, got %s", accountID, arn.AccountID)
 	assert.Equal(t, resource, arn.Resource, "Expected resource to be %s, got %s", resource, arn.Resource)
