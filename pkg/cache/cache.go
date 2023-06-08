@@ -156,6 +156,12 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 		arn = fmt.Sprintf("arn:%s:iam::%s:role/%s", c.composeRoleArn.Partition, c.composeRoleArn.AccountID, arn)
 	}
 
+	matched, err := regexp.Match(`^arn:aws[a-z0-9-]*:iam::\d{12}:role\/[\w-\/.@+=,]+$`, []byte(arn))
+	if err != nil {
+		klog.Errorf("Regex error: %v", err)
+	} else if !matched {
+		klog.Warningf("arn is invalid: %s", arn)
+	}
 	resp := &CacheResponse{}
 	if ok {
 		resp.RoleARN = arn
