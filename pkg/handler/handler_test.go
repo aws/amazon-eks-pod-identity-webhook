@@ -152,12 +152,7 @@ func TestModifierHandler(t *testing.T) {
 
 	modifier := NewModifier(
 		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
-		WithConfig(config.NewFakeConfig("cca", "uri", map[config.Identity]bool{
-			config.Identity{
-				Namespace:      "default",
-				ServiceAccount: "default",
-			}: true,
-		})),
+		WithConfig(config.NewFakeConfig("", "", nil)),
 	)
 
 	ts := httptest.NewServer(

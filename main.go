@@ -75,9 +75,9 @@ func main() {
 	regionalSTS := flag.Bool("sts-regional-endpoint", false, "Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to `false`.")
 	watchConfigMap := flag.Bool("watch-config-map", false, "Enables watching serviceaccounts that are configured through the pod-identity-webhook configmap instead of using annotations")
 	composeRoleArn := flag.Bool("compose-role-arn", false, "If true, then the role name and path can be used instead of the fully qualified ARN in the `role-arn` annotation.  In this case, webhook will look up the partition and account ID using instance metadata.  Defaults to `false`.")
-	watchConfigFile := flag.String("watch-config-file", "", "ac")
-	containerCredentialsAudience := flag.String("container-credentials-audience", "sts.amazonaws.com", "")
-	containerCredentialsFullUri := flag.String("container-credentials-full-uri", "", "")
+	watchConfigFile := flag.String("watch-config-file", "", "Absolute path to the config file to watch for")
+	containerCredentialsAudience := flag.String("container-credentials-audience", "pods.eks.amazonaws.com", "The audience for tokens used by the AWS Container Credentials method")
+	containerCredentialsFullUri := flag.String("container-credentials-full-uri", "http://169.254.170.23/v1/credentials", "AWS_CONTAINER_CREDENTIALS_FULL_URI will be set to this value in mutated containers")
 
 	version := flag.Bool("version", false, "Display the version and exit")
 
