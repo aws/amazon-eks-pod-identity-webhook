@@ -148,7 +148,14 @@ func TestUpdatePodSpec(t *testing.T) {
 				}
 
 				tokenExpiration, containersToSkip := modifier.parsePodAnnotations(pod, tokenExpiration)
-				patch, _ := modifier.getPodSpecPatch(pod, roleARN, audience, regionalSTS, tokenExpiration, containersToSkip)
+				patchConfig := &podPatchConfig{
+					ContainersToSkip:       containersToSkip,
+					TokenExpiration:        tokenExpiration,
+					UseRegionalSTS:         regionalSTS,
+					Audience:               audience,
+					WebIdentityPatchConfig: &webIdentityPatchConfig{RoleArn: roleARN},
+				}
+				patch, _ := modifier.getPodSpecPatch(pod, patchConfig)
 				patchBytes, err := json.Marshal(patch)
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)

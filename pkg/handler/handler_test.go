@@ -18,6 +18,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/config"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -42,7 +43,10 @@ func TestMutatePod(t *testing.T) {
 		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
 	}
 
-	modifier := NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)))
+	modifier := NewModifier(
+		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
+		WithConfig(config.NewFakeConfig("", "", nil)),
+	)
 	cases := []struct {
 		caseName string
 		input    *v1beta1.AdmissionReview
@@ -142,11 +146,19 @@ func TestModifierHandler(t *testing.T) {
 	testServiceAccount.Name = "default"
 	testServiceAccount.Namespace = "default"
 	testServiceAccount.Annotations = map[string]string{
-		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
+		"eks.amazonaws.com/role-arn":         "arn:aws:iam::111122223333:role/s3-reader",
 		"eks.amazonaws.com/token-expiration": "3600",
 	}
 
-	modifier := NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)))
+	modifier := NewModifier(
+		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
+		WithConfig(config.NewFakeConfig("cca", "uri", map[config.Identity]bool{
+			config.Identity{
+				Namespace:      "default",
+				ServiceAccount: "default",
+			}: true,
+		})),
+	)
 
 	ts := httptest.NewServer(
 		http.HandlerFunc(modifier.Handle),

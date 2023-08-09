@@ -21,6 +21,7 @@ import (
 	"crypto/x509/pkix"
 	goflag "flag"
 	"fmt"
+	identityconfig "github.com/aws/amazon-eks-pod-identity-webhook/pkg/config"
 	"net/http"
 	"os"
 	"strings"
@@ -74,6 +75,9 @@ func main() {
 	regionalSTS := flag.Bool("sts-regional-endpoint", false, "Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to `false`.")
 	watchConfigMap := flag.Bool("watch-config-map", false, "Enables watching serviceaccounts that are configured through the pod-identity-webhook configmap instead of using annotations")
 	composeRoleArn := flag.Bool("compose-role-arn", false, "If true, then the role name and path can be used instead of the fully qualified ARN in the `role-arn` annotation.  In this case, webhook will look up the partition and account ID using instance metadata.  Defaults to `false`.")
+	watchConfigFile := flag.String("watch-config-file", "", "ac")
+	containerCredentialsAudience := flag.String("container-credentials-audience", "sts.amazonaws.com", "")
+	containerCredentialsFullUri := flag.String("container-credentials-full-uri", "", "")
 
 	version := flag.Bool("version", false, "Display the version and exit")
 
@@ -93,6 +97,9 @@ func main() {
 		fmt.Println(webhookVersion)
 		os.Exit(0)
 	}
+
+	// setup signal handler
+	signalHandlerCtx := signals.SetupSignalHandler()
 
 	config, err := clientcmd.BuildConfigFromFlags(*apiURL, *kubeconfig)
 	if err != nil {
@@ -178,10 +185,20 @@ func main() {
 	saCache.Start(stop)
 	defer close(stop)
 
+	fileConfig := identityconfig.NewFileConfig(*containerCredentialsAudience, *containerCredentialsFullUri)
+	if *watchConfigFile != "" {
+		klog.Infof("Watching config file %s", *watchConfigFile)
+		err = fileConfig.StartWatcher(signalHandlerCtx, *watchConfigFile)
+		if err != nil {
+			klog.Fatalf("Error starting watcher on file %v: %v", *watchConfigFile, err.Error())
+		}
+	}
+
 	mod := handler.NewModifier(
 		handler.WithAnnotationDomain(*annotationPrefix),
 		handler.WithMountPath(*mountPath),
 		handler.WithServiceAccountCache(saCache),
+		handler.WithConfig(fileConfig),
 		handler.WithRegion(*region),
 	)
 
@@ -212,8 +229,6 @@ func main() {
 		// Expose other debug paths
 	}
 
-	// setup signal handler to be passed to certwatcher and http server
-	signalHandlerCtx := signals.SetupSignalHandler()
 	tlsConfig := &tls.Config{}
 
 	if *inCluster {
