@@ -14,7 +14,7 @@ import (
 
 const workItemKey = "key"
 
-// FileWatcher watches the files defined in files
+// FileWatcher watches a single file and trigger the given handler function
 type FileWatcher struct {
 	path    string
 	handler FileContentHandler
@@ -44,9 +44,8 @@ func NewFileWatcher(purpose string, path string, handler FileContentHandler) *Fi
 	}
 }
 
-// Watch sets up the fsnotify watcher and adds each file we are interested in.  The file watcher
-// and worker run in goroutines.  The function returns and goroutines are stopped when the ctx
-// is cancelled.
+// Watch sets up the fsnotify watcher and add the file that we are interested in.  The file watcher
+// and worker run in goroutines.  The goroutines are stopped when the ctx is cancelled.
 func (f *FileWatcher) Watch(ctx context.Context) error {
 	// Trigger initial file load
 	f.queue.Add(workItemKey)
@@ -76,7 +75,6 @@ func (f *FileWatcher) Watch(ctx context.Context) error {
 		}
 	}()
 
-	// Add a path
 	dir := filepath.Dir(f.path)
 	err = f.watcher.Add(dir)
 	if err != nil {
@@ -86,9 +84,7 @@ func (f *FileWatcher) Watch(ctx context.Context) error {
 	return nil
 }
 
-// processEvent adds an item to the workqueue so that file reloading work will
-// be scheduled to be done.  Rename and Remove events attempt to trigger an
-// immediate restart of the watch by removing and re-adding it.
+// processEvent adds an item to the workqueue.
 func (f *FileWatcher) processEvent(event fsnotify.Event) {
 	if event.Name == f.path {
 		f.queue.Add(workItemKey)
