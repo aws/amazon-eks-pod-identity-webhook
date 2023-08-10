@@ -118,9 +118,9 @@ func TestFileWatcher(t *testing.T) {
 			}, defaultTimeout, defaultPollInterval)
 
 			cancel()
-			assert.Eventually(t, func() bool {
+			assert.Eventuallyf(t, func() bool {
 				return len(fileWatcher.watcher.WatchList()) == 0
-			}, defaultTimeout, defaultPollInterval)
+			}, defaultTimeout, defaultPollInterval, "expect watchList to have 0, but actual len is %d", len(fileWatcher.watcher.WatchList()))
 		})
 	}
 }

@@ -65,7 +65,7 @@ func (f *FileWatcher) Watch(ctx context.Context) error {
 			case err := <-f.watcher.Errors:
 				klog.ErrorS(err, "Error from watcher")
 			case e := <-f.watcher.Events:
-				klog.InfoS("Event received", "event", e)
+				klog.V(3).InfoS("Event received", "event", e)
 				f.processEvent(e)
 			case <-ctx.Done():
 				klog.Info("context closed, stopping FileWatcher")
