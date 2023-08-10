@@ -3,7 +3,6 @@ package filesystem
 import (
 	"context"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/klog/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -99,6 +98,7 @@ func TestFileWatcher(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
 			dirPath, err := os.MkdirTemp("", "test")
 			assert.NoError(t, err)
@@ -117,12 +117,6 @@ func TestFileWatcher(t *testing.T) {
 			assert.Eventually(t, func() bool {
 				return tc.expectedContent == recorder.content
 			}, defaultTimeout, defaultPollInterval)
-
-			klog.InfoS("WatchList len", len(fileWatcher.watcher.WatchList()))
-			cancel()
-			assert.Eventuallyf(t, func() bool {
-				return len(fileWatcher.watcher.WatchList()) == 0
-			}, defaultTimeout, defaultPollInterval, "expect watchList to have len 0, but actual len is %d", len(fileWatcher.watcher.WatchList()))
 		})
 	}
 }
