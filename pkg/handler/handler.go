@@ -386,7 +386,6 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 }
 
 // MutatePod takes a AdmissionReview, mutates the pod, and returns an AdmissionResponse
-// TODO 2 modes
 func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResponse {
 	badRequest := &v1beta1.AdmissionResponse{
 		Result: &metav1.Status{

@@ -186,7 +186,7 @@ func main() {
 	defer close(stop)
 
 	fileConfig := identityconfig.NewFileConfig(*containerCredentialsAudience, *containerCredentialsFullUri)
-	if *watchConfigFile != "" {
+	if watchConfigFile != nil && *watchConfigFile != "" {
 		klog.Infof("Watching config file %s", *watchConfigFile)
 		err = fileConfig.StartWatcher(signalHandlerCtx, *watchConfigFile)
 		if err != nil {

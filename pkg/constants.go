@@ -20,9 +20,8 @@ const (
 	DefaultTokenExpiration = int64(86400)
 	// 1hr is min for kube-apiserver
 	MinTokenExpiration = int64(3600)
-)
 
-const (
+	// AWS SDK defined environment variables.
 	AwsEnvVarContainerCredentialsFullUri     = "AWS_CONTAINER_CREDENTIALS_FULL_URI"
 	AwsEnvVarContainerAuthorizationTokenFile = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"
 )
