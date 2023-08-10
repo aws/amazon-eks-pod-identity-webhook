@@ -3,6 +3,7 @@ package filesystem
 import (
 	"context"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/klog/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -117,10 +118,11 @@ func TestFileWatcher(t *testing.T) {
 				return tc.expectedContent == recorder.content
 			}, defaultTimeout, defaultPollInterval)
 
+			klog.InfoS("WatchList len", len(fileWatcher.watcher.WatchList()))
 			cancel()
 			assert.Eventuallyf(t, func() bool {
 				return len(fileWatcher.watcher.WatchList()) == 0
-			}, defaultTimeout, defaultPollInterval, "expect watchList to have 0, but actual len is %d", len(fileWatcher.watcher.WatchList()))
+			}, defaultTimeout, defaultPollInterval, "expect watchList to have len 0, but actual len is %d", len(fileWatcher.watcher.WatchList()))
 		})
 	}
 }
