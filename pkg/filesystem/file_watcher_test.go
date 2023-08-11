@@ -17,6 +17,7 @@ package filesystem
 
 import (
 	"context"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"path/filepath"
@@ -63,9 +64,7 @@ func TestFileWatcher(t *testing.T) {
 		{
 			name: "File exists before watch is started",
 			preWatchFileFunc: func(t *testing.T, filePath string) {
-				file, err := os.Create(filePath)
-				assert.NoError(t, err)
-				setFileContent(t, file, "foo")
+				writeFile(t, filePath, "foo")
 			},
 			postWatchFileFunc: noopFileFunc,
 			expectedContent:   "foo",
@@ -74,18 +73,14 @@ func TestFileWatcher(t *testing.T) {
 			name:             "File is created after watch",
 			preWatchFileFunc: noopFileFunc,
 			postWatchFileFunc: func(t *testing.T, filePath string) {
-				file, err := os.Create(filePath)
-				assert.NoError(t, err)
-				setFileContent(t, file, "bar")
+				writeFile(t, filePath, "bar")
 			},
 			expectedContent: "bar",
 		},
 		{
 			name: "File is removed after watch",
 			preWatchFileFunc: func(t *testing.T, filePath string) {
-				file, err := os.Create(filePath)
-				assert.NoError(t, err)
-				setFileContent(t, file, "bar")
+				writeFile(t, filePath, "bar")
 			},
 			postWatchFileFunc: func(t *testing.T, filePath string) {
 				err := os.Remove(filePath)
@@ -96,15 +91,11 @@ func TestFileWatcher(t *testing.T) {
 		{
 			name: "Basic test",
 			preWatchFileFunc: func(t *testing.T, filePath string) {
-				file, err := os.Create(filePath)
-				assert.NoError(t, err)
-				setFileContent(t, file, "foo")
+				writeFile(t, filePath, "foo")
 			},
 			postWatchFileFunc: func(t *testing.T, filePath string) {
-				file, err := os.OpenFile(filePath, os.O_RDWR|os.O_APPEND, 0666)
-				assert.NoError(t, err)
-				appendFileContent(t, file, "-bar")
-				appendFileContent(t, file, "-end")
+				appendToFile(t, filePath, "-bar")
+				appendToFile(t, filePath, "-end")
 			},
 			expectedContent: "foo-bar-end",
 		},
@@ -136,20 +127,56 @@ func TestFileWatcher(t *testing.T) {
 	}
 }
 
-func setFileContent(t *testing.T, f *os.File, newContent string) {
-	err := f.Truncate(0)
+func TestFileWatch_RetryOnHandlerError(t *testing.T) {
+	errCount := 0
+	processedContent := ""
+	validContent := "Valid content"
+	invalidContent := "Invalid content"
+	handler := func(content []byte) error {
+		if string(content) == invalidContent {
+			errCount += 1
+			return fmt.Errorf("content is malformed")
+		}
+		processedContent = string(content)
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	dirPath, err := os.MkdirTemp("", "")
 	assert.NoError(t, err)
-	_, err = f.Seek(0, 0)
+	defer os.RemoveAll(dirPath)
+
+	filePath := filepath.Join(dirPath, "file")
+	writeFile(t, filePath, invalidContent)
+
+	fileWatcher := NewFileWatcher("testing", filePath, handler)
+	err = fileWatcher.Watch(ctx)
+	assert.NoError(t, err)
+
+	assert.Eventually(t, func() bool {
+		return errCount > 1 && processedContent == ""
+	}, defaultTimeout, defaultPollInterval)
+
+	writeFile(t, filePath, validContent)
+	assert.Eventually(t, func() bool {
+		return processedContent == validContent
+	}, defaultTimeout, defaultPollInterval)
+}
+
+func writeFile(t *testing.T, filePath string, content string) {
+	err := os.WriteFile(filePath, []byte(content), 0666)
+	assert.NoError(t, err)
+}
+
+func appendToFile(t *testing.T, filePath string, newContent string) {
+	f, err := os.OpenFile(filePath, os.O_RDWR|os.O_APPEND, 0666)
 	assert.NoError(t, err)
 	_, err = f.WriteString(newContent)
 	assert.NoError(t, err)
 	err = f.Sync()
 	assert.NoError(t, err)
-}
-
-func appendFileContent(t *testing.T, f *os.File, newContent string) {
-	_, err := f.WriteString(newContent)
-	assert.NoError(t, err)
-	err = f.Sync()
+	err = f.Close()
 	assert.NoError(t, err)
 }

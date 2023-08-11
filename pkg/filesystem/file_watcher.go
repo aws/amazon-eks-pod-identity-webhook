@@ -27,8 +27,12 @@ import (
 	"time"
 )
 
-const workItemKey = "key"
-const workerPollRate = 1 * time.Second
+const (
+	workItemKey        = "key"
+	workerPollInterval = 1 * time.Second
+	workqueueBaseDelay = 10 * time.Millisecond
+	workqueueMaxDelay  = 5 * time.Minute
+)
 
 // FileWatcher watches a single file and trigger the given handler function
 type FileWatcher struct {
@@ -56,7 +60,7 @@ func NewFileWatcher(purpose string, path string, handler FileContentHandler) *Fi
 	return &FileWatcher{
 		path:    path,
 		handler: handler,
-		queue:   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), purpose),
+		queue:   workqueue.NewNamedRateLimitingQueue(workqueue.NewItemExponentialFailureRateLimiter(workqueueBaseDelay, workqueueMaxDelay), purpose),
 	}
 }
 
@@ -72,7 +76,7 @@ func (f *FileWatcher) Watch(ctx context.Context) error {
 		return err
 	}
 
-	go wait.UntilWithContext(ctx, f.runWorker, workerPollRate)
+	go wait.UntilWithContext(ctx, f.runWorker, workerPollInterval)
 
 	// Start listening for events.
 	go func() {
@@ -112,7 +116,7 @@ func (f *FileWatcher) runWorker(ctx context.Context) {
 	}
 }
 
-func (f *FileWatcher) processNextWorkItem(ctx context.Context) bool {
+func (f *FileWatcher) processNextWorkItem(ctx context.Context) (continuePoll bool) {
 	k, quit := f.queue.Get()
 	if quit {
 		return false
