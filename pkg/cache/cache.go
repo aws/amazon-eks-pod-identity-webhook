@@ -43,6 +43,7 @@ type CacheResponse struct {
 type ServiceAccountCache interface {
 	Start(stop chan struct{})
 	Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64)
+	GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64)
 	// ToJSON returns cache contents as JSON string
 	ToJSON() string
 }
@@ -104,6 +105,18 @@ func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, use
 	return "", "", false, pkg.DefaultTokenExpiration
 }
 
+// GetCommonConfigurations returns the common configurations that also applies to the new mutation method(i.e Container Credentials).
+// The config file for the container credentials does not contain "TokenExpiration" or "UseRegionalSTS". For backward compatibility,
+// Use these fields if they are set in the sa annotations or config map.
+func (c *serviceAccountCache) GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64) {
+	if resp := c.getSA(name, namespace); resp != nil {
+		return resp.UseRegionalSTS, resp.TokenExpiration
+	} else if resp := c.getCM(name, namespace); resp != nil {
+		return resp.UseRegionalSTS, resp.TokenExpiration
+	}
+	return false, pkg.DefaultTokenExpiration
+}
+
 func (c *serviceAccountCache) getSA(name, namespace string) *CacheResponse {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -151,46 +164,48 @@ func (c *serviceAccountCache) ToJSON() string {
 }
 
 func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
-	arn, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.RoleARNAnnotation]
-
-	if !strings.Contains(arn, "arn:") && c.composeRoleArn.Enabled {
-		arn = fmt.Sprintf("arn:%s:iam::%s:role/%s", c.composeRoleArn.Partition, c.composeRoleArn.AccountID, arn)
-	}
-
-	matched, err := regexp.Match(`^arn:aws[a-z0-9-]*:iam::\d{12}:role\/[\w-\/.@+=,]+$`, []byte(arn))
-	if err != nil {
-		klog.Errorf("Regex error: %v", err)
-	} else if !matched {
-		klog.Warningf("arn is invalid: %s", arn)
-	}
 	resp := &CacheResponse{}
+
+	arn, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.RoleARNAnnotation]
 	if ok {
+		if !strings.Contains(arn, "arn:") && c.composeRoleArn.Enabled {
+			arn = fmt.Sprintf("arn:%s:iam::%s:role/%s", c.composeRoleArn.Partition, c.composeRoleArn.AccountID, arn)
+		}
+
+		matched, err := regexp.Match(`^arn:aws[a-z0-9-]*:iam::\d{12}:role\/[\w-\/.@+=,]+$`, []byte(arn))
+		if err != nil {
+			klog.Errorf("Regex error: %v", err)
+		} else if !matched {
+			klog.Warningf("arn is invalid: %s", arn)
+		}
 		resp.RoleARN = arn
-		resp.Audience = c.defaultAudience
-		if audience, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.AudienceAnnotation]; ok {
-			resp.Audience = audience
-		}
-
-		resp.UseRegionalSTS = c.defaultRegionalSTS
-		if useRegionalStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.UseRegionalSTSAnnotation]; ok {
-			useRegional, err := strconv.ParseBool(useRegionalStr)
-			if err != nil {
-				klog.V(4).Infof("Ignoring service account %s/%s invalid value for disable-regional-sts annotation", sa.Namespace, sa.Name)
-			} else {
-				resp.UseRegionalSTS = useRegional
-			}
-		}
-
-		resp.TokenExpiration = c.defaultTokenExpiration
-		if tokenExpirationStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.TokenExpirationAnnotation]; ok {
-			if tokenExpiration, err := strconv.ParseInt(tokenExpirationStr, 10, 64); err != nil {
-				klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", resp.TokenExpiration, err)
-			} else {
-				resp.TokenExpiration = pkg.ValidateMinTokenExpiration(tokenExpiration)
-			}
-		}
-		c.webhookUsage.Set(1)
 	}
+
+	resp.Audience = c.defaultAudience
+	if audience, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.AudienceAnnotation]; ok {
+		resp.Audience = audience
+	}
+
+	resp.UseRegionalSTS = c.defaultRegionalSTS
+	if useRegionalStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.UseRegionalSTSAnnotation]; ok {
+		useRegional, err := strconv.ParseBool(useRegionalStr)
+		if err != nil {
+			klog.V(4).Infof("Ignoring service account %s/%s invalid value for disable-regional-sts annotation", sa.Namespace, sa.Name)
+		} else {
+			resp.UseRegionalSTS = useRegional
+		}
+	}
+
+	resp.TokenExpiration = c.defaultTokenExpiration
+	if tokenExpirationStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.TokenExpirationAnnotation]; ok {
+		if tokenExpiration, err := strconv.ParseInt(tokenExpirationStr, 10, 64); err != nil {
+			klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", resp.TokenExpiration, err)
+		} else {
+			resp.TokenExpiration = pkg.ValidateMinTokenExpiration(tokenExpiration)
+		}
+	}
+	c.webhookUsage.Set(1)
+
 	c.setSA(sa.Name, sa.Namespace, resp)
 }
 

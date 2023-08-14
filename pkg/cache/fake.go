@@ -54,6 +54,16 @@ func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string,
 	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration
 }
 
+func (f *FakeServiceAccountCache) GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	resp, ok := f.cache[namespace+"/"+name]
+	if !ok {
+		return false, pkg.DefaultTokenExpiration
+	}
+	return resp.UseRegionalSTS, resp.TokenExpiration
+}
+
 // Add adds a cache entry
 func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string, regionalSTS bool, tokenExpiration int64) {
 	f.mu.Lock()

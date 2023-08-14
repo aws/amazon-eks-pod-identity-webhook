@@ -385,6 +385,50 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 	return patch, changed
 }
 
+// buildPodPatchConfig reads configurations from multiples data sources and builds a merged podPatchConfig.
+// Data sources include: Cache, Config, and pod's annotations.
+// It calls Cache and Config to get the configurations of a service account
+//
+// Some mutation parameters can be overridden via pod or serviceaccount
+// annotations. The serviceaccount cache already parsed the serviceaccount
+// annotations and flags such that annotations take precedence.
+// audience:        serviceaccount annotation > flag
+// regionalSTS:     serviceaccount annotation > flag
+// tokenExpiration: pod annotation > serviceaccount annotation > flag
+func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
+	// Container credentials method takes precedence
+	containerCredentialsPatchConfig := m.Config.Get(pod.Namespace, pod.Spec.ServiceAccountName)
+	if containerCredentialsPatchConfig != nil {
+		regionalSTS, tokenExpiration := m.Cache.GetCommonConfigurations(pod.Spec.ServiceAccountName, pod.Namespace)
+		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
+		return &podPatchConfig{
+			ContainersToSkip:                containersToSkip,
+			TokenExpiration:                 tokenExpiration,
+			UseRegionalSTS:                  regionalSTS,
+			Audience:                        containerCredentialsPatchConfig.Audience,
+			WebIdentityPatchConfig:          nil,
+			ContainerCredentialsPatchConfig: containerCredentialsPatchConfig,
+		}
+	}
+
+	// Use the STS WebIdentity method if set
+	roleArn, audience, regionalSTS, tokenExpiration := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
+	if roleArn != "" {
+		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
+		return &podPatchConfig{
+			ContainersToSkip:                containersToSkip,
+			TokenExpiration:                 tokenExpiration,
+			UseRegionalSTS:                  regionalSTS,
+			Audience:                        audience,
+			WebIdentityPatchConfig:          &webIdentityPatchConfig{RoleArn: roleArn},
+			ContainerCredentialsPatchConfig: nil,
+		}
+	}
+
+	// No mutations needed
+	return nil
+}
+
 // MutatePod takes a AdmissionReview, mutates the pod, and returns an AdmissionResponse
 func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResponse {
 	badRequest := &v1beta1.AdmissionResponse{
@@ -413,42 +457,12 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 
 	pod.Namespace = req.Namespace
 
-	// Some mutation parameters can be overridden via pod or serviceaccount
-	// annotations. The serviceaccount cache already parsed the serviceaccount
-	// annotations and flags such that annotations take precedence.
-	// audience:        serviceaccount annotation > flag
-	// regionalSTS:     serviceaccount annotation > flag
-	// tokenExpiration: pod annotation > serviceaccount annotation > flag
-	roleArn, audience, regionalSTS, tokenExpiration := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
-
-	containerCredentialsPatchConfig := m.Config.Get(pod.Namespace, pod.Spec.ServiceAccountName)
-
-	// determine whether to perform mutation
-	if roleArn == "" && containerCredentialsPatchConfig == nil {
+	patchConfig := m.buildPodPatchConfig(&pod)
+	if patchConfig == nil {
 		klog.V(4).Infof("Pod was not mutated. Reason: "+
 			"Service account did not have the right annotations or was not found in the cache. %s", logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
 		return &v1beta1.AdmissionResponse{
 			Allowed: true,
-		}
-	}
-
-	// parse pod annotations in case they override/set values otherwise dictated
-	// by serviceaccount annotation or flag
-	tokenExpiration, containersToSkip := m.parsePodAnnotations(&pod, tokenExpiration)
-
-	patchConfig := &podPatchConfig{
-		ContainersToSkip: containersToSkip,
-		TokenExpiration:  tokenExpiration,
-		UseRegionalSTS:   regionalSTS,
-	}
-
-	if containerCredentialsPatchConfig != nil {
-		patchConfig.Audience = containerCredentialsPatchConfig.Audience
-		patchConfig.ContainerCredentialsPatchConfig = containerCredentialsPatchConfig
-	} else {
-		patchConfig.Audience = audience
-		patchConfig.WebIdentityPatchConfig = &webIdentityPatchConfig{
-			RoleArn: roleArn,
 		}
 	}
 
