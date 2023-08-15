@@ -390,8 +390,7 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 }
 
 // buildPodPatchConfig reads configurations from multiples data sources and builds a merged podPatchConfig.
-// Data sources include: Cache, Config, and pod's annotations.
-// It calls Cache and Config to get the configurations of a service account
+// Data sources include: Cache, ContainerCredentialsConfig, and pod's annotations.
 //
 // Some mutation parameters can be overridden via pod or serviceaccount
 // annotations. The serviceaccount cache already parsed the serviceaccount
