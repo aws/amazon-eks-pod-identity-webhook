@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/config"
+	"github.com/stretchr/testify/assert"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -75,6 +76,17 @@ func TestMutatePod(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMutatePod_MutationNotNeeded(t *testing.T) {
+	modifier := NewModifier(
+		WithServiceAccountCache(cache.NewFakeServiceAccountCache()),
+		WithConfig(config.NewFakeConfig("", "", nil)),
+	)
+	response := modifier.MutatePod(getValidReview(rawPodWithoutVolume))
+	assert.NotNil(t, response)
+	assert.True(t, response.Allowed)
+	assert.Nil(t, response.Patch)
 }
 
 var jsonPatchType = v1beta1.PatchType("JSONPatch")
