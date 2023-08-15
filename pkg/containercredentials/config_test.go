@@ -13,7 +13,7 @@
   permissions and limitations under the License.
 */
 
-package config
+package containercredentials
 
 import (
 	"context"
@@ -32,8 +32,8 @@ const (
 	namespaceBar               = "bar"
 	namespaceBarServiceAccount = "ns-bar-sa"
 
-	containerCredentialsAudience = "containerCredentialsAudience"
-	containersCredentialsFullUri = "containersCredentialsFullUri"
+	audience = "audience"
+	fullUri  = "fullUri"
 
 	defaultTimeout      = 10 * time.Second
 	defaultPollInterval = 1 * time.Second
@@ -50,7 +50,7 @@ func TestFileConfig_Watcher(t *testing.T) {
 	filePath := filepath.Join(dirPath, "file")
 	assert.NoError(t, os.WriteFile(filePath, defaultConfigObjectBytes(), 0666))
 
-	fileConfig := NewFileConfig(containerCredentialsAudience, containersCredentialsFullUri)
+	fileConfig := NewFileConfig(audience, fullUri)
 	assert.NoError(t, fileConfig.StartWatcher(ctx, filePath))
 	verifyConfigObject(t, fileConfig, defaultConfigObject())
 
@@ -66,7 +66,7 @@ func TestFileConfig_Watcher(t *testing.T) {
 }
 
 func TestFileConfig_WatcherNotStarted(t *testing.T) {
-	fileConfig := NewFileConfig(containerCredentialsAudience, containersCredentialsFullUri)
+	fileConfig := NewFileConfig(audience, fullUri)
 	patchConfig := fileConfig.Get("non-existent", "non-existent")
 	assert.Nil(t, patchConfig)
 }
@@ -102,7 +102,7 @@ func TestFileConfig_Load(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			fileConfig := NewFileConfig(containerCredentialsAudience, containersCredentialsFullUri)
+			fileConfig := NewFileConfig(audience, fullUri)
 			err := fileConfig.Load(tc.input)
 
 			if tc.expectError {
@@ -117,7 +117,7 @@ func TestFileConfig_Load(t *testing.T) {
 }
 
 func TestFileConfig_Get(t *testing.T) {
-	fileConfig := NewFileConfig(containerCredentialsAudience, containersCredentialsFullUri)
+	fileConfig := NewFileConfig(audience, fullUri)
 	err := fileConfig.Load(defaultConfigObjectBytes())
 	assert.NoError(t, err)
 
@@ -126,8 +126,8 @@ func TestFileConfig_Get(t *testing.T) {
 
 	patchConfig := fileConfig.Get(namespaceFoo, namespaceFooServiceAccount)
 	assert.NotNil(t, patchConfig)
-	assert.Equal(t, containerCredentialsAudience, patchConfig.Audience)
-	assert.Equal(t, containersCredentialsFullUri, patchConfig.FullUri)
+	assert.Equal(t, audience, patchConfig.Audience)
+	assert.Equal(t, fullUri, patchConfig.FullUri)
 
 	patchConfig = fileConfig.Get("non-existent", "non-existent")
 	assert.Nil(t, patchConfig)

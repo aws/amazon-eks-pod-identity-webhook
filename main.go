@@ -21,7 +21,7 @@ import (
 	"crypto/x509/pkix"
 	goflag "flag"
 	"fmt"
-	identityconfig "github.com/aws/amazon-eks-pod-identity-webhook/pkg/config"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 	"net/http"
 	"os"
 	"strings"
@@ -75,7 +75,7 @@ func main() {
 	regionalSTS := flag.Bool("sts-regional-endpoint", false, "Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to `false`.")
 	watchConfigMap := flag.Bool("watch-config-map", false, "Enables watching serviceaccounts that are configured through the pod-identity-webhook configmap instead of using annotations")
 	composeRoleArn := flag.Bool("compose-role-arn", false, "If true, then the role name and path can be used instead of the fully qualified ARN in the `role-arn` annotation.  In this case, webhook will look up the partition and account ID using instance metadata.  Defaults to `false`.")
-	watchConfigFile := flag.String("watch-config-file", "", "Absolute path to the config file to watch for")
+	watchContainerCredentialsConfig := flag.String("watch-container-credentials-config", "", "Absolute path to the container credential config file to watch for")
 	containerCredentialsAudience := flag.String("container-credentials-audience", "pods.eks.amazonaws.com", "The audience for tokens used by the AWS Container Credentials method")
 	containerCredentialsFullUri := flag.String("container-credentials-full-uri", "http://169.254.170.23/v1/credentials", "AWS_CONTAINER_CREDENTIALS_FULL_URI will be set to this value in mutated containers")
 
@@ -185,12 +185,12 @@ func main() {
 	saCache.Start(stop)
 	defer close(stop)
 
-	fileConfig := identityconfig.NewFileConfig(*containerCredentialsAudience, *containerCredentialsFullUri)
-	if watchConfigFile != nil && *watchConfigFile != "" {
-		klog.Infof("Watching config file %s", *watchConfigFile)
-		err = fileConfig.StartWatcher(signalHandlerCtx, *watchConfigFile)
+	containerCredentialsConfig := containercredentials.NewFileConfig(*containerCredentialsAudience, *containerCredentialsFullUri)
+	if watchContainerCredentialsConfig != nil && *watchContainerCredentialsConfig != "" {
+		klog.Infof("Watching container credentials config file %s", *watchContainerCredentialsConfig)
+		err = containerCredentialsConfig.StartWatcher(signalHandlerCtx, *watchContainerCredentialsConfig)
 		if err != nil {
-			klog.Fatalf("Error starting watcher on file %v: %v", *watchConfigFile, err.Error())
+			klog.Fatalf("Error starting watcher on file %v: %v", *watchContainerCredentialsConfig, err.Error())
 		}
 	}
 
@@ -198,7 +198,7 @@ func main() {
 		handler.WithAnnotationDomain(*annotationPrefix),
 		handler.WithMountPath(*mountPath),
 		handler.WithServiceAccountCache(saCache),
-		handler.WithConfig(fileConfig),
+		handler.WithContainerCredentialsConfig(containerCredentialsConfig),
 		handler.WithRegion(*region),
 	)
 

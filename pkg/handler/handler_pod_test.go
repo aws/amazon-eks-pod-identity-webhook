@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/config"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -71,7 +71,7 @@ func buildModifierFromPod(pod *corev1.Pod) *Modifier {
 	}
 
 	modifierOpts = append(modifierOpts, WithServiceAccountCache(buildFakeCacheFromPod(pod)))
-	modifierOpts = append(modifierOpts, WithConfig(buildFakeConfigFromPod(pod)))
+	modifierOpts = append(modifierOpts, WithContainerCredentialsConfig(buildFakeConfigFromPod(pod)))
 
 	return NewModifier(modifierOpts...)
 }
@@ -107,19 +107,19 @@ func buildFakeCacheFromPod(pod *corev1.Pod) *cache.FakeServiceAccountCache {
 	return cache.NewFakeServiceAccountCache(testServiceAccount)
 }
 
-func buildFakeConfigFromPod(pod *corev1.Pod) *config.FakeConfig {
+func buildFakeConfigFromPod(pod *corev1.Pod) *containercredentials.FakeConfig {
 	containerCredentialsAudience := pod.Annotations[containerCredentialsAudienceAnnotation]
 	containerCredentialsFullURI := pod.Annotations[containerCredentialsFullURIAnnotation]
 	if containerCredentialsFullURI != "" && containerCredentialsAudience != "" {
-		identity := config.Identity{
+		identity := containercredentials.Identity{
 			Namespace:      "default",
 			ServiceAccount: "default",
 		}
-		return config.NewFakeConfig(containerCredentialsAudience, containerCredentialsFullURI, map[config.Identity]bool{
+		return containercredentials.NewFakeConfig(containerCredentialsAudience, containerCredentialsFullURI, map[containercredentials.Identity]bool{
 			identity: true,
 		})
 	}
-	return config.NewFakeConfig("", "", map[config.Identity]bool{})
+	return containercredentials.NewFakeConfig("", "", map[containercredentials.Identity]bool{})
 }
 
 func TestUpdatePodSpec(t *testing.T) {

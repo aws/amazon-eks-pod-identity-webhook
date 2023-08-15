@@ -13,7 +13,7 @@
   permissions and limitations under the License.
 */
 
-package config
+package containercredentials
 
 import (
 	"context"
@@ -25,12 +25,12 @@ import (
 )
 
 type Config interface {
-	Get(namespace string, serviceAccount string) *ContainerCredentialsPatchConfig
+	Get(namespace string, serviceAccount string) *PatchConfig
 }
 
 type FileConfig struct {
-	containerCredentialsAudience string
-	containersCredentialsFullUri string
+	audience string
+	fullUri  string
 
 	watcher              *filesystem.FileWatcher
 	identityConfigObject *IdentityConfigObject
@@ -38,17 +38,17 @@ type FileConfig struct {
 	mu                   sync.RWMutex // guards cache
 }
 
-type ContainerCredentialsPatchConfig struct {
+type PatchConfig struct {
 	Audience string
 	FullUri  string
 }
 
-func NewFileConfig(containersCredentialsAudience, containersCredentialsFullUri string) *FileConfig {
+func NewFileConfig(audience, fullUri string) *FileConfig {
 	return &FileConfig{
-		containerCredentialsAudience: containersCredentialsAudience,
-		containersCredentialsFullUri: containersCredentialsFullUri,
-		identityConfigObject:         nil,
-		cache:                        make(map[Identity]bool),
+		audience:             audience,
+		fullUri:              fullUri,
+		identityConfigObject: nil,
+		cache:                make(map[Identity]bool),
 	}
 }
 
@@ -56,7 +56,7 @@ func NewFileConfig(containersCredentialsAudience, containersCredentialsFullUri s
 // The watcher runs continuously until the context is cancelled.  When the file is updated,
 // Load will be invoked, and thus will refresh the cache.
 func (f *FileConfig) StartWatcher(ctx context.Context, filePath string) error {
-	f.watcher = filesystem.NewFileWatcher("local-file-config", filePath, f.Load)
+	f.watcher = filesystem.NewFileWatcher("container-credential-config", filePath, f.Load)
 	return f.watcher.Watch(ctx)
 }
 
@@ -65,7 +65,7 @@ func (f *FileConfig) Load(content []byte) error {
 	defer f.mu.Unlock()
 
 	if content == nil || len(content) == 0 {
-		klog.Info("Config file is empty, clearing cache")
+		klog.Info("Container credentials config file is empty, clearing cache")
 		f.identityConfigObject = nil
 		f.cache = nil
 		return nil
@@ -73,30 +73,30 @@ func (f *FileConfig) Load(content []byte) error {
 
 	var configObject IdentityConfigObject
 	if err := json.Unmarshal(content, &configObject); err != nil {
-		return fmt.Errorf("error Unmarshalling config file: %v", err)
+		return fmt.Errorf("error Unmarshalling container credentials config file: %v", err)
 	}
 
 	newCache := make(map[Identity]bool)
 	for _, item := range configObject.Identities {
-		klog.V(5).Infof("Adding SA %s/%s to config cache", item.Namespace, item.ServiceAccount)
+		klog.V(5).Infof("Adding SA %s/%s to container credentials config cache", item.Namespace, item.ServiceAccount)
 		newCache[item] = true
 	}
 	f.identityConfigObject = &configObject
 	f.cache = newCache
-	klog.Info("Successfully loaded config file")
+	klog.Info("Successfully loaded container credentials config file")
 
 	return nil
 }
 
-func (f *FileConfig) Get(namespace string, serviceAccount string) *ContainerCredentialsPatchConfig {
+func (f *FileConfig) Get(namespace string, serviceAccount string) *PatchConfig {
 	key := Identity{
 		Namespace:      namespace,
 		ServiceAccount: serviceAccount,
 	}
 	if f.getCacheItem(key) {
-		return &ContainerCredentialsPatchConfig{
-			Audience: f.containerCredentialsAudience,
-			FullUri:  f.containersCredentialsFullUri,
+		return &PatchConfig{
+			Audience: f.audience,
+			FullUri:  f.fullUri,
 		}
 	}
 

@@ -13,7 +13,7 @@
   permissions and limitations under the License.
 */
 
-package config
+package containercredentials
 
 type IdentityConfigObject struct {
 	Identities []Identity `json:"identities,omitempty"`

@@ -13,7 +13,7 @@
   permissions and limitations under the License.
 */
 
-package config
+package containercredentials
 
 type FakeConfig struct {
 	ContainerCredentialsAudience string
@@ -29,13 +29,13 @@ func NewFakeConfig(containerCredentialsAudience, containerCredentialsFullUri str
 	}
 }
 
-func (f *FakeConfig) Get(namespace string, serviceAccount string) *ContainerCredentialsPatchConfig {
+func (f *FakeConfig) Get(namespace string, serviceAccount string) *PatchConfig {
 	key := Identity{
 		Namespace:      namespace,
 		ServiceAccount: serviceAccount,
 	}
 	if _, ok := f.Identities[key]; ok {
-		return &ContainerCredentialsPatchConfig{
+		return &PatchConfig{
 			Audience: f.ContainerCredentialsAudience,
 			FullUri:  f.ContainerCredentialsFullUri,
 		}

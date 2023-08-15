@@ -18,7 +18,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/config"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 	"github.com/stretchr/testify/assert"
 	"io"
 	"io/ioutil"
@@ -46,7 +46,7 @@ func TestMutatePod(t *testing.T) {
 
 	modifier := NewModifier(
 		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
-		WithConfig(config.NewFakeConfig("", "", nil)),
+		WithContainerCredentialsConfig(containercredentials.NewFakeConfig("", "", nil)),
 	)
 	cases := []struct {
 		caseName string
@@ -81,7 +81,7 @@ func TestMutatePod(t *testing.T) {
 func TestMutatePod_MutationNotNeeded(t *testing.T) {
 	modifier := NewModifier(
 		WithServiceAccountCache(cache.NewFakeServiceAccountCache()),
-		WithConfig(config.NewFakeConfig("", "", nil)),
+		WithContainerCredentialsConfig(containercredentials.NewFakeConfig("", "", nil)),
 	)
 	response := modifier.MutatePod(getValidReview(rawPodWithoutVolume))
 	assert.NotNil(t, response)
@@ -164,7 +164,7 @@ func TestModifierHandler(t *testing.T) {
 
 	modifier := NewModifier(
 		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
-		WithConfig(config.NewFakeConfig("", "", nil)),
+		WithContainerCredentialsConfig(containercredentials.NewFakeConfig("", "", nil)),
 	)
 
 	ts := httptest.NewServer(

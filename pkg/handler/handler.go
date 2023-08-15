@@ -19,7 +19,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/config"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
@@ -56,9 +56,9 @@ func WithServiceAccountCache(c cache.ServiceAccountCache) ModifierOpt {
 	return func(m *Modifier) { m.Cache = c }
 }
 
-// WithConfig sets the modifier Config
-func WithConfig(config config.Config) ModifierOpt {
-	return func(m *Modifier) { m.Config = config }
+// WithContainerCredentialsConfig sets the modifier ContainerCredentialsConfig
+func WithContainerCredentialsConfig(config containercredentials.Config) ModifierOpt {
+	return func(m *Modifier) { m.ContainerCredentialsConfig = config }
 }
 
 // WithMountPath sets the modifier mountPath
@@ -93,13 +93,13 @@ func NewModifier(opts ...ModifierOpt) *Modifier {
 
 // Modifier holds configuration values for pod modifications
 type Modifier struct {
-	AnnotationDomain string
-	MountPath        string
-	Region           string
-	Cache            cache.ServiceAccountCache
-	Config           config.Config
-	volName          string
-	tokenName        string
+	AnnotationDomain           string
+	MountPath                  string
+	Region                     string
+	Cache                      cache.ServiceAccountCache
+	ContainerCredentialsConfig containercredentials.Config
+	volName                    string
+	tokenName                  string
 }
 
 type patchOperation struct {
@@ -114,7 +114,7 @@ type podPatchConfig struct {
 	UseRegionalSTS                  bool
 	Audience                        string
 	WebIdentityPatchConfig          *webIdentityPatchConfig
-	ContainerCredentialsPatchConfig *config.ContainerCredentialsPatchConfig
+	ContainerCredentialsPatchConfig *containercredentials.PatchConfig
 }
 
 type webIdentityPatchConfig struct {
@@ -172,16 +172,20 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath 
 	stsKey := "AWS_STS_REGIONAL_ENDPOINTS"
 	for _, env := range container.Env {
 		if _, ok := webIdentityKeys[env.Name]; ok {
+			klog.V(4).Infof("Web identity env variable %s is already defined in the pod spec", env)
 			webIdentityKeysDefined = true
 		}
 		if _, ok := containerCredentialsKeys[env.Name]; ok {
+			klog.V(4).Infof("Container credential env variable %s is already defined in the pod spec", env)
 			containerCredentialsKeysDefined = true
 		}
 		if _, ok := awsRegionKeys[env.Name]; ok {
 			// Don't set both region keys if any region key is already set
+			klog.V(4).Infof("AWS Region env variable %s is already defined in the pod spec", env)
 			regionKeyDefined = true
 		}
 		if env.Name == stsKey {
+			klog.V(4).Infof("AWS STS env variable %s is already defined in the pod spec", env)
 			regionalStsKeyDefined = true
 		}
 	}
@@ -397,7 +401,7 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 // tokenExpiration: pod annotation > serviceaccount annotation > flag
 func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	// Container credentials method takes precedence
-	containerCredentialsPatchConfig := m.Config.Get(pod.Namespace, pod.Spec.ServiceAccountName)
+	containerCredentialsPatchConfig := m.ContainerCredentialsConfig.Get(pod.Namespace, pod.Spec.ServiceAccountName)
 	if containerCredentialsPatchConfig != nil {
 		regionalSTS, tokenExpiration := m.Cache.GetCommonConfigurations(pod.Spec.ServiceAccountName, pod.Namespace)
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
