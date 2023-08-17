@@ -436,3 +436,93 @@ func TestRoleArnComposition(t *testing.T) {
 	assert.Equal(t, accountID, arn.AccountID, "Expected account ID to be %s, got %s", accountID, arn.AccountID)
 	assert.Equal(t, resource, arn.Resource, "Expected resource to be %s, got %s", resource, arn.Resource)
 }
+
+func TestGetCommonConfigurations(t *testing.T) {
+	const (
+		namespaceName      = "foo"
+		serviceAccountName = "foo-sa"
+	)
+
+	k8sServiceAccount := &v1.ServiceAccount{}
+	k8sServiceAccount.Name = serviceAccountName
+	k8sServiceAccount.Namespace = namespaceName
+	k8sServiceAccount.Annotations = map[string]string{
+		"eks.amazonaws.com/sts-regional-endpoints": "true",
+		"eks.amazonaws.com/token-expiration":       "10000",
+	}
+
+	k8sConfigMap := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-identity-webhook",
+		},
+		Data: map[string]string{
+			"config": "{\"foo/foo-sa\":{\"RoleARN\":\"arn:aws-test:iam::123456789012:role/my-role\",\"Audience\":\"amazonaws.com\",\"UseRegionalSTS\":true,\"TokenExpiration\":20000}}",
+		},
+	}
+
+	testcases := []struct {
+		name                    string
+		serviceAccount          *v1.ServiceAccount
+		configMap               *v1.ConfigMap
+		requestServiceAccount   string
+		requestNamespace        string
+		expectedUseRegionalSTS  bool
+		expectedTokenExpiration int64
+	}{
+		{
+			name:                    "Entry not found in sa or cm",
+			requestServiceAccount:   "sa",
+			requestNamespace:        "ns",
+			expectedUseRegionalSTS:  false,
+			expectedTokenExpiration: pkg.DefaultTokenExpiration,
+		},
+		{
+			name:                    "Service account is set, but not CM",
+			serviceAccount:          k8sServiceAccount,
+			requestServiceAccount:   serviceAccountName,
+			requestNamespace:        namespaceName,
+			expectedUseRegionalSTS:  true,
+			expectedTokenExpiration: 10000,
+		},
+		{
+			name:                    "Config map is set, but not service account",
+			configMap:               k8sConfigMap,
+			requestServiceAccount:   serviceAccountName,
+			requestNamespace:        namespaceName,
+			expectedUseRegionalSTS:  true,
+			expectedTokenExpiration: 20000,
+		},
+		{
+			name:                    "Both service account and config map is set, service account should take precedence",
+			serviceAccount:          k8sServiceAccount,
+			configMap:               k8sConfigMap,
+			requestServiceAccount:   serviceAccountName,
+			requestNamespace:        namespaceName,
+			expectedUseRegionalSTS:  true,
+			expectedTokenExpiration: 10000,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			cache := &serviceAccountCache{
+				saCache:          map[string]*CacheResponse{},
+				cmCache:          map[string]*CacheResponse{},
+				defaultAudience:  "sts.amazonaws.com",
+				annotationPrefix: "eks.amazonaws.com",
+				webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
+			}
+
+			if tc.serviceAccount != nil {
+				cache.addSA(tc.serviceAccount)
+			}
+			if tc.configMap != nil {
+				cache.populateCacheFromCM(nil, tc.configMap)
+			}
+
+			useRegionalSTS, tokenExpiration := cache.GetCommonConfigurations(tc.requestServiceAccount, tc.requestNamespace)
+			assert.Equal(t, tc.expectedUseRegionalSTS, useRegionalSTS)
+			assert.Equal(t, tc.expectedTokenExpiration, tokenExpiration)
+		})
+	}
+}

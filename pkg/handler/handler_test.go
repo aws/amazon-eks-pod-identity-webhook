@@ -18,6 +18,8 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
+	"github.com/stretchr/testify/assert"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -42,7 +44,10 @@ func TestMutatePod(t *testing.T) {
 		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
 	}
 
-	modifier := NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)))
+	modifier := NewModifier(
+		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
+		WithContainerCredentialsConfig(containercredentials.NewFakeConfig("", "", nil)),
+	)
 	cases := []struct {
 		caseName string
 		input    *v1beta1.AdmissionReview
@@ -71,6 +76,17 @@ func TestMutatePod(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMutatePod_MutationNotNeeded(t *testing.T) {
+	modifier := NewModifier(
+		WithServiceAccountCache(cache.NewFakeServiceAccountCache()),
+		WithContainerCredentialsConfig(containercredentials.NewFakeConfig("", "", nil)),
+	)
+	response := modifier.MutatePod(getValidReview(rawPodWithoutVolume))
+	assert.NotNil(t, response)
+	assert.True(t, response.Allowed)
+	assert.Nil(t, response.Patch)
 }
 
 var jsonPatchType = v1beta1.PatchType("JSONPatch")
@@ -142,11 +158,14 @@ func TestModifierHandler(t *testing.T) {
 	testServiceAccount.Name = "default"
 	testServiceAccount.Namespace = "default"
 	testServiceAccount.Annotations = map[string]string{
-		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
+		"eks.amazonaws.com/role-arn":         "arn:aws:iam::111122223333:role/s3-reader",
 		"eks.amazonaws.com/token-expiration": "3600",
 	}
 
-	modifier := NewModifier(WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)))
+	modifier := NewModifier(
+		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
+		WithContainerCredentialsConfig(containercredentials.NewFakeConfig("", "", nil)),
+	)
 
 	ts := httptest.NewServer(
 		http.HandlerFunc(modifier.Handle),

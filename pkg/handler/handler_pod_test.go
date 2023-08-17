@@ -19,21 +19,21 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 )
 
 var fixtureDir = "./testdata"
 
-var (
+const (
 	// SkipAnnotation means "don't test this file"
 	skipAnnotation = "testing.eks.amazonaws.com/skip"
 	// Expected patch output
@@ -45,6 +45,10 @@ var (
 	saInjectSTSAnnotation             = "testing.eks.amazonaws.com/serviceAccount/sts-regional-endpoints"
 	saInjectTokenExpirationAnnotation = "testing.eks.amazonaws.com/serviceAccount/token-expiration"
 
+	// Container credentials annotation values
+	containerCredentialsFullURIAnnotation  = "testing.eks.amazonaws.com/containercredentials/uri"
+	containerCredentialsAudienceAnnotation = "testing.eks.amazonaws.com/containercredentials/audience"
+
 	// Handler values
 	handlerMountPathAnnotation  = "testing.eks.amazonaws.com/handler/mountPath"
 	handlerExpirationAnnotation = "testing.eks.amazonaws.com/handler/expiration"
@@ -52,47 +56,70 @@ var (
 	handlerSTSAnnotation        = "testing.eks.amazonaws.com/handler/injectSTS"
 )
 
-// getTestValuesFromPod gets values to set up test case environments with as if
+// buildModifierFromPod gets values to set up test case environments with as if
 // the values were set by service account annotation/flag before the test case.
 // Test cases are defined entirely by pod yamls.
-func getTestValuesFromPod(pod corev1.Pod) (*Modifier, int64, bool, error) {
-	modifiers := []ModifierOpt{}
+func buildModifierFromPod(pod *corev1.Pod) *Modifier {
+	var modifierOpts []ModifierOpt
 
 	if path, ok := pod.Annotations[handlerMountPathAnnotation]; ok {
-		modifiers = append(modifiers, WithMountPath(path))
-	}
-
-	tokenExpiration := pkg.DefaultTokenExpiration
-	if expStr, ok := pod.Annotations[handlerExpirationAnnotation]; ok {
-		expInt, err := strconv.Atoi(expStr)
-		if err != nil {
-			return nil, 0, false, err
-		}
-		tokenExpiration = int64(expInt)
-	}
-
-	if expStr, ok := pod.Annotations[handlerExpirationAnnotation]; ok {
-		expInt, err := strconv.Atoi(expStr)
-		if err != nil {
-			return nil, 0, false, err
-		}
-		tokenExpiration = int64(expInt)
+		modifierOpts = append(modifierOpts, WithMountPath(path))
 	}
 
 	if region, ok := pod.Annotations[handlerRegionAnnotation]; ok {
-		modifiers = append(modifiers, WithRegion(region))
+		modifierOpts = append(modifierOpts, WithRegion(region))
 	}
 
-	regionalSTS := false
-	if stsAnnotation, ok := pod.Annotations[handlerSTSAnnotation]; ok {
-		value, err := strconv.ParseBool(stsAnnotation)
-		if err != nil {
-			return nil, 0, false, err
+	modifierOpts = append(modifierOpts, WithServiceAccountCache(buildFakeCacheFromPod(pod)))
+	modifierOpts = append(modifierOpts, WithContainerCredentialsConfig(buildFakeConfigFromPod(pod)))
+
+	return NewModifier(modifierOpts...)
+}
+
+func buildFakeCacheFromPod(pod *corev1.Pod) *cache.FakeServiceAccountCache {
+	testServiceAccount := &corev1.ServiceAccount{}
+	testServiceAccount.Name = "default"
+	testServiceAccount.Namespace = "default"
+	testServiceAccount.Annotations = map[string]string{}
+
+	if role, ok := pod.Annotations[roleArnSAAnnotation]; ok {
+		testServiceAccount.Annotations["eks.amazonaws.com/role-arn"] = role
+	}
+
+	if aud, ok := pod.Annotations[audienceAnnotation]; ok {
+		testServiceAccount.Annotations["eks.amazonaws.com/audience"] = aud
+	}
+
+	for _, annotationKey := range []string{saInjectSTSAnnotation, handlerSTSAnnotation} {
+		if regionalSTS, ok := pod.Annotations[annotationKey]; ok {
+			testServiceAccount.Annotations["eks.amazonaws.com/sts-regional-endpoints"] = regionalSTS
+			break
 		}
-		regionalSTS = value
 	}
 
-	return NewModifier(modifiers...), tokenExpiration, regionalSTS, nil
+	for _, annotationKey := range []string{saInjectTokenExpirationAnnotation, handlerExpirationAnnotation} {
+		if tokenExpiration, ok := pod.Annotations[annotationKey]; ok {
+			testServiceAccount.Annotations["eks.amazonaws.com/token-expiration"] = tokenExpiration
+			break
+		}
+	}
+
+	return cache.NewFakeServiceAccountCache(testServiceAccount)
+}
+
+func buildFakeConfigFromPod(pod *corev1.Pod) *containercredentials.FakeConfig {
+	containerCredentialsAudience := pod.Annotations[containerCredentialsAudienceAnnotation]
+	containerCredentialsFullURI := pod.Annotations[containerCredentialsFullURIAnnotation]
+	if containerCredentialsFullURI != "" && containerCredentialsAudience != "" {
+		identity := containercredentials.Identity{
+			Namespace:      "default",
+			ServiceAccount: "default",
+		}
+		return containercredentials.NewFakeConfig(containerCredentialsAudience, containerCredentialsFullURI, map[containercredentials.Identity]bool{
+			identity: true,
+		})
+	}
+	return containercredentials.NewFakeConfig("", "", map[containercredentials.Identity]bool{})
 }
 
 func TestUpdatePodSpec(t *testing.T) {
@@ -117,38 +144,13 @@ func TestUpdatePodSpec(t *testing.T) {
 				}
 			}
 
+			pod.Namespace = "default"
+			pod.Spec.ServiceAccountName = "default"
+
 			t.Run(fmt.Sprintf("Pod %s in file %s", pod.Name, path), func(t *testing.T) {
-				modifier, tokenExpiration, regionalSTS, err := getTestValuesFromPod(*pod)
-				if err != nil {
-					t.Errorf("Error creating modifier: %v", err)
-				}
-
-				var roleARN string
-				if role, ok := pod.Annotations[roleArnSAAnnotation]; ok {
-					roleARN = role
-				}
-
-				audience := "sts.amazonaws.com"
-				if aud, ok := pod.Annotations[audienceAnnotation]; ok {
-					audience = aud
-				}
-
-				if regionalSTSstr, ok := pod.Annotations[saInjectSTSAnnotation]; ok {
-					regionalSTS, err = strconv.ParseBool(regionalSTSstr)
-					if err != nil {
-						t.Errorf("Error parsing annotation %s: %v", saInjectSTSAnnotation, err)
-					}
-				}
-
-				if tokenExpirationStr, ok := pod.Annotations[saInjectTokenExpirationAnnotation]; ok {
-					tokenExpiration, err = strconv.ParseInt(tokenExpirationStr, 10, 64)
-					if err != nil {
-						t.Errorf("Error parsing annotation %s: %v", saInjectTokenExpirationAnnotation, err)
-					}
-				}
-
-				tokenExpiration, containersToSkip := modifier.parsePodAnnotations(pod, tokenExpiration)
-				patch, _ := modifier.getPodSpecPatch(pod, roleARN, audience, regionalSTS, tokenExpiration, containersToSkip)
+				modifier := buildModifierFromPod(pod)
+				patchConfig := modifier.buildPodPatchConfig(pod)
+				patch, _ := modifier.getPodSpecPatch(pod, patchConfig)
 				patchBytes, err := json.Marshal(patch)
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
@@ -159,10 +161,7 @@ func TestUpdatePodSpec(t *testing.T) {
 				}
 
 				if bytes.Compare(patchBytes, []byte(expectedPatchStr)) != 0 {
-					t.Errorf("Expected patch didn't match: \nGot\n\t%v\nWanted:\n\t%v\n",
-						string(patchBytes),
-						expectedPatchStr,
-					)
+					t.Errorf("Expected patch didn't match: \nGot\n\t%v\nWanted:\n\t%v\n", string(patchBytes), expectedPatchStr)
 				}
 
 			})
@@ -177,7 +176,7 @@ func TestUpdatePodSpec(t *testing.T) {
 
 // Read in the first pod in the file
 func parseFile(filename string) (*corev1.Pod, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}

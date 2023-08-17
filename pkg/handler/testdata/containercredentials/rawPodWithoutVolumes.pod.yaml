@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: balajilovesoreos
+  annotations:
+    testing.eks.amazonaws.com/skip: "false"
+    testing.eks.amazonaws.com/containercredentials/uri: "con-creds-uri"
+    testing.eks.amazonaws.com/containercredentials/audience: "con-creds-aud"
+    testing.eks.amazonaws.com/expectedPatch: '[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"con-creds-aud","expirationSeconds":86400,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_CONTAINER_CREDENTIALS_FULL_URI","value":"con-creds-uri"},{"name":"AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]'
+spec:
+  containers:
+  - image: amazonlinux
+    name: balajilovesoreos
+  serviceAccountName: default
