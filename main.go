@@ -77,6 +77,9 @@ func main() {
 	composeRoleArn := flag.Bool("compose-role-arn", false, "If true, then the role name and path can be used instead of the fully qualified ARN in the `role-arn` annotation.  In this case, webhook will look up the partition and account ID using instance metadata.  Defaults to `false`.")
 	watchContainerCredentialsConfig := flag.String("watch-container-credentials-config", "", "Absolute path to the container credential config file to watch for")
 	containerCredentialsAudience := flag.String("container-credentials-audience", "pods.eks.amazonaws.com", "The audience for tokens used by the AWS Container Credentials method")
+	containerCredentialsMountPath := flag.String("container-credentials-token-mount-path", "/var/run/secrets/pods.eks.amazonaws.com/serviceaccount", "The path to mount tokens used by the AWS Container Credentials method")
+	containerCredentialsVolumeName := flag.String("container-credentials-token-volume-name", "eks-pod-identity-token", "The name of the projected volume containing the injected service account token. This is only used by the AWS Container Credentials method")
+	containerCredentialsTokenPath := flag.String("container-credentials-token-path", "eks-pod-identity-token", "The path of the injected service account token. This is only used by the AWS Container Credentials method")
 	containerCredentialsFullUri := flag.String("container-credentials-full-uri", "http://169.254.170.23/v1/credentials", "AWS_CONTAINER_CREDENTIALS_FULL_URI will be set to this value in mutated containers")
 
 	version := flag.Bool("version", false, "Display the version and exit")
@@ -185,7 +188,12 @@ func main() {
 	saCache.Start(stop)
 	defer close(stop)
 
-	containerCredentialsConfig := containercredentials.NewFileConfig(*containerCredentialsAudience, *containerCredentialsFullUri)
+	containerCredentialsConfig := containercredentials.NewFileConfig(
+		*containerCredentialsAudience,
+		*containerCredentialsMountPath,
+		*containerCredentialsVolumeName,
+		*containerCredentialsTokenPath,
+		*containerCredentialsFullUri)
 	if watchContainerCredentialsConfig != nil && *watchContainerCredentialsConfig != "" {
 		klog.Infof("Watching container credentials config file %s", *watchContainerCredentialsConfig)
 		err = containerCredentialsConfig.StartWatcher(signalHandlerCtx, *watchContainerCredentialsConfig)

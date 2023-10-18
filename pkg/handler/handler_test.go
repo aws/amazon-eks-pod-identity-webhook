@@ -46,7 +46,7 @@ func TestMutatePod(t *testing.T) {
 
 	modifier := NewModifier(
 		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
-		WithContainerCredentialsConfig(containercredentials.NewFakeConfig("", "", nil)),
+		WithContainerCredentialsConfig(&containercredentials.FakeConfig{}),
 	)
 	cases := []struct {
 		caseName string
@@ -81,7 +81,7 @@ func TestMutatePod(t *testing.T) {
 func TestMutatePod_MutationNotNeeded(t *testing.T) {
 	modifier := NewModifier(
 		WithServiceAccountCache(cache.NewFakeServiceAccountCache()),
-		WithContainerCredentialsConfig(containercredentials.NewFakeConfig("", "", nil)),
+		WithContainerCredentialsConfig(&containercredentials.FakeConfig{}),
 	)
 	response := modifier.MutatePod(getValidReview(rawPodWithoutVolume))
 	assert.NotNil(t, response)
@@ -164,7 +164,7 @@ func TestModifierHandler(t *testing.T) {
 
 	modifier := NewModifier(
 		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
-		WithContainerCredentialsConfig(containercredentials.NewFakeConfig("", "", nil)),
+		WithContainerCredentialsConfig(&containercredentials.FakeConfig{}),
 	)
 
 	ts := httptest.NewServer(

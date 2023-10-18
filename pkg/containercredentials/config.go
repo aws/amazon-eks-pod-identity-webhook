@@ -29,8 +29,11 @@ type Config interface {
 }
 
 type FileConfig struct {
-	audience string
-	fullUri  string
+	audience   string
+	mountPath  string
+	volumeName string
+	tokenPath  string
+	fullUri    string
 
 	watcher              *filesystem.FileWatcher
 	identityConfigObject *IdentityConfigObject
@@ -39,13 +42,19 @@ type FileConfig struct {
 }
 
 type PatchConfig struct {
-	Audience string
-	FullUri  string
+	Audience   string
+	MountPath  string
+	VolumeName string
+	TokenPath  string
+	FullUri    string
 }
 
-func NewFileConfig(audience, fullUri string) *FileConfig {
+func NewFileConfig(audience, mountPath, volumeName, tokenPath, fullUri string) *FileConfig {
 	return &FileConfig{
 		audience:             audience,
+		mountPath:            mountPath,
+		volumeName:           volumeName,
+		tokenPath:            tokenPath,
 		fullUri:              fullUri,
 		identityConfigObject: nil,
 		cache:                make(map[Identity]bool),
@@ -95,8 +104,11 @@ func (f *FileConfig) Get(namespace string, serviceAccount string) *PatchConfig {
 	}
 	if f.getCacheItem(key) {
 		return &PatchConfig{
-			Audience: f.audience,
-			FullUri:  f.fullUri,
+			Audience:   f.audience,
+			MountPath:  f.mountPath,
+			VolumeName: f.volumeName,
+			TokenPath:  f.tokenPath,
+			FullUri:    f.fullUri,
 		}
 	}
 

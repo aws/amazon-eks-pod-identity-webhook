@@ -46,8 +46,11 @@ const (
 	saInjectTokenExpirationAnnotation = "testing.eks.amazonaws.com/serviceAccount/token-expiration"
 
 	// Container credentials annotation values
-	containerCredentialsFullURIAnnotation  = "testing.eks.amazonaws.com/containercredentials/uri"
-	containerCredentialsAudienceAnnotation = "testing.eks.amazonaws.com/containercredentials/audience"
+	containerCredentialsFullURIAnnotation    = "testing.eks.amazonaws.com/containercredentials/uri"
+	containerCredentialsAudienceAnnotation   = "testing.eks.amazonaws.com/containercredentials/audience"
+	containerCredentialsMountPathAnnotation  = "testing.eks.amazonaws.com/containercredentials/mountPath"
+	containerCredentialsVolumeNameAnnotation = "testing.eks.amazonaws.com/containercredentials/volumeName"
+	containerCredentialsTokenPathAnnotation  = "testing.eks.amazonaws.com/containercredentials/tokenPath"
 
 	// Handler values
 	handlerMountPathAnnotation  = "testing.eks.amazonaws.com/handler/mountPath"
@@ -108,18 +111,24 @@ func buildFakeCacheFromPod(pod *corev1.Pod) *cache.FakeServiceAccountCache {
 }
 
 func buildFakeConfigFromPod(pod *corev1.Pod) *containercredentials.FakeConfig {
-	containerCredentialsAudience := pod.Annotations[containerCredentialsAudienceAnnotation]
 	containerCredentialsFullURI := pod.Annotations[containerCredentialsFullURIAnnotation]
-	if containerCredentialsFullURI != "" && containerCredentialsAudience != "" {
+	if containerCredentialsFullURI != "" {
 		identity := containercredentials.Identity{
 			Namespace:      "default",
 			ServiceAccount: "default",
 		}
-		return containercredentials.NewFakeConfig(containerCredentialsAudience, containerCredentialsFullURI, map[containercredentials.Identity]bool{
-			identity: true,
-		})
+		return &containercredentials.FakeConfig{
+			Audience:   pod.Annotations[containerCredentialsAudienceAnnotation],
+			MountPath:  pod.Annotations[containerCredentialsMountPathAnnotation],
+			VolumeName: pod.Annotations[containerCredentialsVolumeNameAnnotation],
+			TokenPath:  pod.Annotations[containerCredentialsTokenPathAnnotation],
+			FullUri:    containerCredentialsFullURI,
+			Identities: map[containercredentials.Identity]bool{
+				identity: true,
+			},
+		}
 	}
-	return containercredentials.NewFakeConfig("", "", map[containercredentials.Identity]bool{})
+	return &containercredentials.FakeConfig{}
 }
 
 func TestUpdatePodSpec(t *testing.T) {
