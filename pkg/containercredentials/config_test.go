@@ -32,8 +32,11 @@ const (
 	namespaceBar               = "bar"
 	namespaceBarServiceAccount = "ns-bar-sa"
 
-	audience = "audience"
-	fullUri  = "fullUri"
+	audience   = "audience"
+	mountPath  = "mountPath"
+	volumeName = "volumeName"
+	tokenName  = "tokenName"
+	fullUri    = "fullUri"
 
 	defaultTimeout      = 10 * time.Second
 	defaultPollInterval = 1 * time.Second
@@ -50,7 +53,7 @@ func TestFileConfig_Watcher(t *testing.T) {
 	filePath := filepath.Join(dirPath, "file")
 	assert.NoError(t, os.WriteFile(filePath, defaultConfigObjectBytes(), 0666))
 
-	fileConfig := NewFileConfig(audience, fullUri)
+	fileConfig := NewFileConfig(audience, mountPath, volumeName, tokenName, fullUri)
 	assert.NoError(t, fileConfig.StartWatcher(ctx, filePath))
 	verifyConfigObject(t, fileConfig, defaultConfigObject())
 
@@ -66,7 +69,7 @@ func TestFileConfig_Watcher(t *testing.T) {
 }
 
 func TestFileConfig_WatcherNotStarted(t *testing.T) {
-	fileConfig := NewFileConfig(audience, fullUri)
+	fileConfig := NewFileConfig(audience, mountPath, volumeName, tokenName, fullUri)
 	patchConfig := fileConfig.Get("non-existent", "non-existent")
 	assert.Nil(t, patchConfig)
 }
@@ -102,7 +105,7 @@ func TestFileConfig_Load(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			fileConfig := NewFileConfig(audience, fullUri)
+			fileConfig := NewFileConfig(audience, mountPath, volumeName, tokenName, fullUri)
 			err := fileConfig.Load(tc.input)
 
 			if tc.expectError {
@@ -117,7 +120,7 @@ func TestFileConfig_Load(t *testing.T) {
 }
 
 func TestFileConfig_Get(t *testing.T) {
-	fileConfig := NewFileConfig(audience, fullUri)
+	fileConfig := NewFileConfig(audience, mountPath, volumeName, tokenName, fullUri)
 	err := fileConfig.Load(defaultConfigObjectBytes())
 	assert.NoError(t, err)
 

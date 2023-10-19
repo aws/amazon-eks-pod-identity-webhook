@@ -113,6 +113,9 @@ type podPatchConfig struct {
 	TokenExpiration                 int64
 	UseRegionalSTS                  bool
 	Audience                        string
+	MountPath                       string
+	VolumeName                      string
+	TokenPath                       string
 	WebIdentityPatchConfig          *webIdentityPatchConfig
 	ContainerCredentialsPatchConfig *containercredentials.PatchConfig
 }
@@ -249,16 +252,16 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath 
 
 	volExists := false
 	for _, vol := range container.VolumeMounts {
-		if vol.Name == m.volName {
+		if vol.Name == patchConfig.VolumeName {
 			volExists = true
 		}
 	}
 
 	if !volExists {
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
-			Name:      m.volName,
+			Name:      patchConfig.VolumeName,
 			ReadOnly:  true,
-			MountPath: m.MountPath,
+			MountPath: patchConfig.MountPath,
 		})
 		changed = true
 	}
@@ -290,7 +293,7 @@ func (m *Modifier) parsePodAnnotations(pod *corev1.Pod, serviceAccountTokenExpir
 
 // getPodSpecPatch gets the patch operation to be applied to the given Pod
 func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig) ([]patchOperation, bool) {
-	tokenFilePath := filepath.Join(m.MountPath, m.tokenName)
+	tokenFilePath := filepath.Join(patchConfig.MountPath, patchConfig.TokenPath)
 
 	betaNodeSelector, _ := pod.Spec.NodeSelector["beta.kubernetes.io/os"]
 	nodeSelector, _ := pod.Spec.NodeSelector["kubernetes.io/os"]
@@ -326,7 +329,7 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 	}
 
 	volume := corev1.Volume{
-		Name: m.volName,
+		Name: patchConfig.VolumeName,
 		VolumeSource: corev1.VolumeSource{
 			Projected: &corev1.ProjectedVolumeSource{
 				Sources: []corev1.VolumeProjection{
@@ -334,7 +337,7 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 						ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
 							Audience:          patchConfig.Audience,
 							ExpirationSeconds: &patchConfig.TokenExpiration,
-							Path:              m.tokenName,
+							Path:              patchConfig.TokenPath,
 						},
 					},
 				},
@@ -347,7 +350,7 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 	// skip adding volume if it already exists
 	volExists := false
 	for _, vol := range pod.Spec.Volumes {
-		if vol.Name == m.volName {
+		if vol.Name == patchConfig.VolumeName {
 			volExists = true
 		}
 	}
@@ -409,6 +412,9 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 			TokenExpiration:                 tokenExpiration,
 			UseRegionalSTS:                  regionalSTS,
 			Audience:                        containerCredentialsPatchConfig.Audience,
+			MountPath:                       containerCredentialsPatchConfig.MountPath,
+			VolumeName:                      containerCredentialsPatchConfig.VolumeName,
+			TokenPath:                       containerCredentialsPatchConfig.TokenPath,
 			WebIdentityPatchConfig:          nil,
 			ContainerCredentialsPatchConfig: containerCredentialsPatchConfig,
 		}
@@ -423,6 +429,9 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 			TokenExpiration:                 tokenExpiration,
 			UseRegionalSTS:                  regionalSTS,
 			Audience:                        audience,
+			MountPath:                       m.MountPath,
+			VolumeName:                      m.volName,
+			TokenPath:                       m.tokenName,
 			WebIdentityPatchConfig:          &webIdentityPatchConfig{RoleArn: roleArn},
 			ContainerCredentialsPatchConfig: nil,
 		}

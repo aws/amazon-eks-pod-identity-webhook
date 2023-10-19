@@ -16,28 +16,30 @@
 package containercredentials
 
 type FakeConfig struct {
-	ContainerCredentialsAudience string
-	ContainerCredentialsFullUri  string
-	Identities                   map[Identity]bool
-}
-
-func NewFakeConfig(containerCredentialsAudience, containerCredentialsFullUri string, identities map[Identity]bool) *FakeConfig {
-	return &FakeConfig{
-		ContainerCredentialsAudience: containerCredentialsAudience,
-		ContainerCredentialsFullUri:  containerCredentialsFullUri,
-		Identities:                   identities,
-	}
+	Audience   string
+	MountPath  string
+	VolumeName string
+	TokenPath  string
+	FullUri    string
+	Identities map[Identity]bool
 }
 
 func (f *FakeConfig) Get(namespace string, serviceAccount string) *PatchConfig {
+	if f.Identities == nil {
+		return nil
+	}
+
 	key := Identity{
 		Namespace:      namespace,
 		ServiceAccount: serviceAccount,
 	}
 	if _, ok := f.Identities[key]; ok {
 		return &PatchConfig{
-			Audience: f.ContainerCredentialsAudience,
-			FullUri:  f.ContainerCredentialsFullUri,
+			Audience:   f.Audience,
+			MountPath:  f.MountPath,
+			VolumeName: f.VolumeName,
+			TokenPath:  f.TokenPath,
+			FullUri:    f.FullUri,
 		}
 	}
 
