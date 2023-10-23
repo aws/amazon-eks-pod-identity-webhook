@@ -50,12 +50,19 @@ var (
 		},
 		[]string{"verb", "path"},
 	)
+	webhookPodCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "pod_identity_webhook_pod_count",
+			Help: "Indicator to how many pods are using sts web identity or container credentials",
+		}, []string{"method"},
+	)
 )
 
 func register() {
 	prometheus.MustRegister(requestCounter)
 	prometheus.MustRegister(requestLatencies)
 	prometheus.MustRegister(requestLatenciesSummary)
+	prometheus.MustRegister(webhookPodCount)
 }
 
 func monitor(verb, path string, httpCode int, reqStart time.Time) {
@@ -100,13 +107,12 @@ func (w *statusLoggingResponseWriter) Write(data []byte) (int, error) {
 // InstrumentRoute is a middleware for adding the following metrics for each
 // route:
 //
-//     # Counter
-//     http_request_count{"verb", "path", "code}
-//     # Histogram
-//     http_request_latencies{"verb", "path"}
-//     # Summary
-//     http_request_duration_microseconds{"verb", "path", "code}
-//
+//	# Counter
+//	http_request_count{"verb", "path", "code}
+//	# Histogram
+//	http_request_latencies{"verb", "path"}
+//	# Summary
+//	http_request_duration_microseconds{"verb", "path", "code}
 func InstrumentRoute() Middleware {
 	return func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
