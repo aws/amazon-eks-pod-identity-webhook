@@ -19,12 +19,13 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
@@ -407,6 +408,9 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	if containerCredentialsPatchConfig != nil {
 		regionalSTS, tokenExpiration := m.Cache.GetCommonConfigurations(pod.Spec.ServiceAccountName, pod.Namespace)
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
+
+		webhookPodCount.WithLabelValues("container_credentials").Inc()
+
 		return &podPatchConfig{
 			ContainersToSkip:                containersToSkip,
 			TokenExpiration:                 tokenExpiration,
@@ -424,6 +428,9 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	roleArn, audience, regionalSTS, tokenExpiration := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
 	if roleArn != "" {
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
+
+		webhookPodCount.WithLabelValues("sts_web_identity").Inc()
+
 		return &podPatchConfig{
 			ContainersToSkip:                containersToSkip,
 			TokenExpiration:                 tokenExpiration,
