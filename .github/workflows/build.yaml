@@ -24,6 +24,14 @@ jobs:
         else
           TAG=$BRANCH
         fi
+        if [[ -z "${{ secrets.DOCKERHUB_USER }}" || -z "${{ secrets.DOCKERHUB_TOKEN }}" ]]; then
+          docker buildx build \
+                -t $REPO:$TAG \
+                --platform=linux/amd64,linux/arm64 \
+                --progress plain \
+                .
+          exit 0
+        fi
         docker login -u ${{ secrets.DOCKERHUB_USER }} -p ${{ secrets.DOCKERHUB_TOKEN }}
 
         docker buildx build \
