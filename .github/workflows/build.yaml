@@ -7,7 +7,9 @@ jobs:
     if: github.repository == 'aws/amazon-eks-pod-identity-webhook'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v3
+    - name: Setup Go Version
+      run: echo "GO_VERSION=$(cat .go-version)" >> $GITHUB_ENV
     - name: Set up Docker Buildx
       id: buildx
       uses: crazy-max/ghaction-docker-buildx@v3
@@ -27,6 +29,7 @@ jobs:
         if [[ -z "${{ secrets.DOCKERHUB_USER }}" || -z "${{ secrets.DOCKERHUB_TOKEN }}" ]]; then
           docker buildx build \
                 -t $REPO:$TAG \
+                --build-arg golang_image=public.ecr.aws/eks-distro-build-tooling/golang:${{ env.GO_VERSION }}-gcc \
                 --platform=linux/amd64,linux/arm64 \
                 --progress plain \
                 .
@@ -36,12 +39,14 @@ jobs:
 
         docker buildx build \
               -t $REPO:$TAG \
+              --build-arg golang_image=public.ecr.aws/eks-distro-build-tooling/golang:${{ env.GO_VERSION }}-gcc \
               --platform=linux/amd64,linux/arm64 \
               --progress plain \
               --push .
         if [ "$BRANCH" = "master" ]; then
           docker buildx build \
                 -t $REPO:latest \
+                --build-arg golang_image=public.ecr.aws/eks-distro-build-tooling/golang:${{ env.GO_VERSION }}-gcc \
                 --platform=linux/amd64,linux/arm64 \
                 --progress plain \
                 --push .
