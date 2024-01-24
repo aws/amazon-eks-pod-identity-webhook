@@ -2,39 +2,44 @@
 -include build/private/bgo_exports.makefile
 include ${BGO_MAKEFILE}
 
-export CGO_ENABLED=0
-export T=github.com/aws/amazon-eks-pod-identity-webhook
-UNAME_S = $(shell uname -s)
-GO_LDFLAGS = -ldflags='-s -w -buildid=""'
-
 install:: build
-ifeq ($(UNAME_S), Darwin)
-	GOOS=darwin GOARCH=amd64 go build -o build/gopath/bin/darwin_amd64/amazon-eks-pod-identity-webhook $(GO_LDFLAGS) $V $T
-endif
-	GOOS=linux GOARCH=amd64 go build -o build/gopath/bin/linux_amd64/amazon-eks-pod-identity-webhook $(GO_LDFLAGS) $V $T
+	hack/install.sh
 
 # Generic make
-REGISTRY_ID?=602401143452
+REGISTRY?=public.ecr.aws
 IMAGE_NAME?=eks/pod-identity-webhook
-REGION?=us-west-2
-IMAGE?=$(REGISTRY_ID).dkr.ecr.$(REGION).amazonaws.com/$(IMAGE_NAME)
+IMAGE?=$(REGISTRY)/$(IMAGE_NAME)
+
+GIT_COMMIT ?= $(shell git log -1 --pretty=%h)
+
+# Architectures for binary builds
+BIN_ARCH_LINUX ?= amd64 arm64
 
 test:
-	go test -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out
+	hack/test.sh
 
-docker:
-	@echo 'Building image $(IMAGE)...'
-	docker buildx build --output=type=docker --platform linux/amd64 --no-cache -t $(IMAGE) .
+# Function build-image
+# Parameters:
+# 1: Target architecture
+define build-image
+$(MAKE) .image-linux-$(1)
+endef
 
-push: docker
-	if ! aws ecr get-login-password --region $(REGION) | docker login --username AWS --password-stdin $(REGISTRY_ID).dkr.ecr.$(REGION).amazonaws.com; then \
-	  eval $$(aws ecr get-login --registry-ids $(REGISTRY_ID) --no-include-email); \
-	fi
-	docker push $(IMAGE)
+.PHONY: build-all-images
+build-all-images:
+	$(foreach arch,$(BIN_ARCH_LINUX),$(call build-image,$(arch)))
+
+.PHONY: image
+image: .image-linux-amd64
+
+.PHONY: .image-linux-%
+.image-linux-%:
+	docker buildx build --output=type=docker --platform linux/$* \
+		--build-arg golang_image=$(shell hack/setup-go.sh) --no-cache \
+		--tag $(IMAGE):$(GIT_COMMIT)-linux_$* .
 
 amazon-eks-pod-identity-webhook:
-	go build
+	hack/amazon-eks-pod-identity-webhook.sh
 
 certs/tls.key:
 	mkdir -p certs
@@ -92,6 +97,6 @@ clean::
 	rm -rf ./amazon-eks-pod-identity-webhook
 	rm -rf ./certs/ coverage.out
 
-.PHONY: docker push build local-serve local-request cluster-up cluster-down prep-config deploy-config delete-config clean
+.PHONY: image build local-serve local-request cluster-up cluster-down prep-config deploy-config delete-config clean
 
 

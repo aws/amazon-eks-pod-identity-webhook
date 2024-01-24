@@ -3,6 +3,7 @@
 amazon-eks-pod-identity-webhook
 deploy/deployment.yaml
 build
+bin
 /certs/
 SAMToolkit.*
 coverage.out
