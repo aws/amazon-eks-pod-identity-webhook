@@ -6,9 +6,9 @@ install:: build
 	hack/install.sh
 
 # Generic make
-REPO?=gcr.io/must-override
+REGISTRY?=public.ecr.aws
 IMAGE_NAME?=eks/pod-identity-webhook
-IMAGE?=$(REPO)/$(IMAGE_NAME)
+IMAGE?=$(REGISTRY)/$(IMAGE_NAME)
 
 GIT_COMMIT ?= $(shell git log -1 --pretty=%h)
 
