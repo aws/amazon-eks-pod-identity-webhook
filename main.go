@@ -21,7 +21,6 @@ import (
 	"crypto/x509/pkix"
 	goflag "flag"
 	"fmt"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 	"net/http"
 	"os"
 	"strings"
@@ -31,6 +30,7 @@ import (
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
 	cachedebug "github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache/debug"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cert"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/handler"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -301,6 +301,8 @@ func main() {
 		Addr:    metricsAddr,
 		Handler: metricsMux,
 	}
+
+	handler.ShutdownFromContext(signalHandlerCtx, metricsServer, time.Duration(10)*time.Second)
 
 	go func() {
 		klog.Infof("Listening on %s", addr)
