@@ -1,6 +1,8 @@
 module github.com/aws/amazon-eks-pod-identity-webhook
 
-go 1.19
+go 1.21
+
+toolchain go1.22.1
 
 require (
 	github.com/aws/aws-sdk-go v1.44.259
