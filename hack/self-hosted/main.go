@@ -12,8 +12,8 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/go-jose/go-jose/v4"
 	"github.com/pkg/errors"
-	jose "gopkg.in/square/go-jose.v2"
 )
 
 // copied from kubernetes/kubernetes#78502
