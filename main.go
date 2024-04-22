@@ -21,6 +21,7 @@ import (
 	"crypto/x509/pkix"
 	goflag "flag"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
 	"net/http"
 	"os"
 	"strings"
@@ -138,7 +139,7 @@ func main() {
 			klog.Fatalf("Error creating session: %v", err.Error())
 		}
 
-		metadataClient := ec2metadata.New(sess)
+		metadataClient := ec2metadata.New(sess, aws.NewConfig().WithLogLevel(aws.LogDebugWithHTTPBody))
 		identity, err = metadataClient.GetInstanceIdentityDocument()
 		if err != nil {
 			klog.Fatalf("Error getting instance identity document: %v", err.Error())
