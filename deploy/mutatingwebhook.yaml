@@ -13,6 +13,11 @@ webhooks:
       name: pod-identity-webhook
       namespace: default
       path: "/mutate"
+  objectSelector:
+    matchExpressions:
+      - key: eks.amazonaws.com/skip-pod-identity-webhook
+        operator: "DoesNotExist"
+        values: []
   rules:
   - operations: [ "CREATE" ]
     apiGroups: [""]
