@@ -15,7 +15,7 @@ webhooks:
       path: "/mutate"
   objectSelector:
     matchExpressions:
-      - key: eks.amazonaws.com/skip-identity-webhook
+      - key: eks.amazonaws.com/skip-pod-identity-webhook
         operator: "DoesNotExist"
         values: []
   rules:
