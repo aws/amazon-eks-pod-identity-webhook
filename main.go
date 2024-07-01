@@ -49,7 +49,7 @@ var webhookVersion = "v0.1.0"
 
 func main() {
 	port := flag.Int("port", 443, "Port to listen on")
-	metricsPort := flag.Int("metrics-port", 9999, "Port to listen on for metrics and healthz (http)")
+	metricsPort := flag.Int("metrics-port", 9999, "Port to listen on for metrics (http)")
 
 	// TODO Group in help text in-cluster/out-of-cluster/business logic flags
 	// out-of-cluster kubeconfig / TLS options
@@ -220,9 +220,14 @@ func main() {
 		handler.Logging(),
 	)
 	mux.Handle("/mutate", baseHandler)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "ok")
+	})
 
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.Handler())
+	// TODO: Remove this extra healthz endpoint once we've migrated
+	// the health check service to the application port:
 	metricsMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "ok")
 	})
@@ -311,7 +316,7 @@ func main() {
 		}
 	}()
 
-	klog.Infof("Listening on %s for metrics and healthz", metricsAddr)
+	klog.Infof("Listening on %s for metrics", metricsAddr)
 	if err := metricsServer.ListenAndServe(); err != http.ErrServerClosed {
 		klog.Fatalf("Error listening: %q", err)
 	}
