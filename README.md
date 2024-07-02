@@ -156,7 +156,7 @@ Usage of amazon-eks-pod-identity-webhook:
       --log_file string                  If non-empty, use this log file
       --log_file_max_size uint           Defines the maximum size a log file can grow to. Unit is megabytes. If the value is 0, the maximum file size is unlimited. (default 1800)
       --logtostderr                      log to standard error instead of files (default true)
-      --metrics-port int                 Port to listen on for metrics and healthz (http) (default 9999)
+      --metrics-port int                 Port to listen on for metrics (http) (default 9999)
       --namespace string                 (in-cluster) The namespace name this webhook, the TLS secret, and configmap resides in (default "eks")
       --port int                         Port to listen on (default 443)
       --service-name string              (in-cluster) The service name fronting this webhook (default "pod-identity-webhook")
