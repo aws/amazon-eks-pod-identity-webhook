@@ -226,11 +226,6 @@ func main() {
 
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.Handler())
-	// TODO: Remove this extra healthz endpoint once we've migrated
-	// the health check service to the application port:
-	metricsMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "ok")
-	})
 
 	// Register debug endpoint only if flag is enabled
 	if *debug {
