@@ -36,16 +36,18 @@ func TestSaCache(t *testing.T) {
 		webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
 	}
 
-	role, aud, useRegionalSTS, tokenExpiration := cache.Get("default", "default")
+	role, aud, useRegionalSTS, tokenExpiration, found := cache.Get("default", "default")
 
+	assert.False(t, found, "Expected no cache entry to be found")
 	if role != "" || aud != "" {
 		t.Errorf("Expected role and aud to be empty, got %s, %s, %t, %d", role, aud, useRegionalSTS, tokenExpiration)
 	}
 
 	cache.addSA(testSA)
 
-	role, aud, useRegionalSTS, tokenExpiration = cache.Get("default", "default")
+	role, aud, useRegionalSTS, tokenExpiration, found = cache.Get("default", "default")
 
+	assert.True(t, found, "Expected cache entry to be found")
 	assert.Equal(t, roleArn, role, "Expected role to be %s, got %s", roleArn, role)
 	assert.Equal(t, "sts.amazonaws.com", aud, "Expected aud to be sts.amzonaws.com, got %s", aud)
 	assert.True(t, useRegionalSTS, "Expected regional STS to be true, got false")
@@ -157,7 +159,8 @@ func TestNonRegionalSTS(t *testing.T) {
 				t.Fatalf("cache never called addSA: %v", err)
 			}
 
-			gotRoleArn, gotAudience, useRegionalSTS, gotTokenExpiration := cache.Get("default", "default")
+			gotRoleArn, gotAudience, useRegionalSTS, gotTokenExpiration, found := cache.Get("default", "default")
+			assert.True(t, found, "Expected cache entry to be found")
 			if gotRoleArn != roleArn {
 				t.Errorf("got roleArn %v, expected %v", gotRoleArn, roleArn)
 			}
@@ -202,7 +205,7 @@ func TestPopulateCacheFromCM(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		role, _, _, _ := c.Get("mysa2", "myns2")
+		role, _, _, _, _ := c.Get("mysa2", "myns2")
 		if role == "" {
 			t.Errorf("cloud not find entry that should have been added")
 		}
@@ -214,7 +217,7 @@ func TestPopulateCacheFromCM(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		role, _, _, _ := c.Get("mysa2", "myns2")
+		role, _, _, _, _ := c.Get("mysa2", "myns2")
 		if role == "" {
 			t.Errorf("cloud not find entry that should have been added")
 		}
@@ -226,7 +229,7 @@ func TestPopulateCacheFromCM(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		role, _, _, _ := c.Get("mysa2", "myns2")
+		role, _, _, _, _ := c.Get("mysa2", "myns2")
 		if role != "" {
 			t.Errorf("found entry that should have been removed")
 		}
@@ -256,7 +259,7 @@ func TestSAAnnotationRemoval(t *testing.T) {
 	c.addSA(oldSA)
 
 	{
-		gotRoleArn, _, _, _ := c.Get("default", "default")
+		gotRoleArn, _, _, _, _ := c.Get("default", "default")
 		if gotRoleArn != roleArn {
 			t.Errorf("got roleArn %q, expected %q", gotRoleArn, roleArn)
 		}
@@ -268,7 +271,7 @@ func TestSAAnnotationRemoval(t *testing.T) {
 	c.addSA(newSA)
 
 	{
-		gotRoleArn, _, _, _ := c.Get("default", "default")
+		gotRoleArn, _, _, _, _ := c.Get("default", "default")
 		if gotRoleArn != "" {
 			t.Errorf("got roleArn %v, expected %q", gotRoleArn, "")
 		}
@@ -323,7 +326,7 @@ func TestCachePrecedence(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		role, _, _, exp := c.Get("mysa2", "myns2")
+		role, _, _, exp, _ := c.Get("mysa2", "myns2")
 		if role == "" {
 			t.Errorf("could not find entry that should have been added")
 		}
@@ -340,7 +343,7 @@ func TestCachePrecedence(t *testing.T) {
 		}
 
 		// Removing sa2 from CM, but SA still exists
-		role, _, _, exp := c.Get("mysa2", "myns2")
+		role, _, _, exp, _ := c.Get("mysa2", "myns2")
 		if role == "" {
 			t.Errorf("could not find entry that should still exist")
 		}
@@ -356,7 +359,7 @@ func TestCachePrecedence(t *testing.T) {
 		c.addSA(sa2)
 
 		// Neither cache should return any hits now
-		role, _, _, _ := c.Get("myns2", "mysa2")
+		role, _, _, _, _ := c.Get("myns2", "mysa2")
 		if role != "" {
 			t.Errorf("found entry that should not exist")
 		}
@@ -370,7 +373,7 @@ func TestCachePrecedence(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		role, _, _, exp := c.Get("mysa2", "myns2")
+		role, _, _, exp, _ := c.Get("mysa2", "myns2")
 		if role == "" {
 			t.Errorf("cloud not find entry that should have been added")
 		}
@@ -422,7 +425,7 @@ func TestRoleArnComposition(t *testing.T) {
 
 	var roleArn string
 	err := wait.ExponentialBackoff(wait.Backoff{Duration: 10 * time.Millisecond, Factor: 1.0, Steps: 3}, func() (bool, error) {
-		roleArn, _, _, _ = cache.Get("default", "default")
+		roleArn, _, _, _, _ = cache.Get("default", "default")
 		return roleArn != "", nil
 	})
 	if err != nil {

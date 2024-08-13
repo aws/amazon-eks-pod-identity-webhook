@@ -86,6 +86,8 @@ func main() {
 
 	debug := flag.Bool("enable-debugging-handlers", false, "Enable debugging handlers. Currently /debug/alpha/cache is supported")
 
+	saLookupGracePeriod := flag.Duration("service-account-lookup-grace-period", 100*time.Millisecond, "The grace period for service account to be available in cache before not mutating a pod. Defaults to 100ms. Set to 0 to deactivate waiting. Carefully use higher values as it may have significant impact on Kubernetes' pod scheduling performance.")
+
 	klog.InitFlags(goflag.CommandLine)
 	// Add klog CommandLine flags to pflag CommandLine
 	goflag.CommandLine.VisitAll(func(f *goflag.Flag) {
@@ -208,6 +210,7 @@ func main() {
 		handler.WithServiceAccountCache(saCache),
 		handler.WithContainerCredentialsConfig(containerCredentialsConfig),
 		handler.WithRegion(*region),
+		handler.WithSALookupGraceTime(*saLookupGracePeriod),
 	)
 
 	addr := fmt.Sprintf(":%d", *port)

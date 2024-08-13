@@ -42,7 +42,8 @@ type CacheResponse struct {
 
 type ServiceAccountCache interface {
 	Start(stop chan struct{})
-	Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64)
+	Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64, found bool)
+	GetOrNotify(name, namespace string, handler chan any) (role, aud string, useRegionalSTS bool, tokenExpiration int64, found bool)
 	GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64)
 	// ToJSON returns cache contents as JSON string
 	ToJSON() string
@@ -60,6 +61,7 @@ type serviceAccountCache struct {
 	composeRoleArn         ComposeRoleArn
 	defaultTokenExpiration int64
 	webhookUsage           prometheus.Gauge
+	notificationHandlers   map[string]chan any // type of channel doesn't matter. It's just for being notified
 }
 
 type ComposeRoleArn struct {
@@ -87,29 +89,37 @@ func init() {
 // Get will return the cached configuration of the given ServiceAccount.
 // It will first look at the set of ServiceAccounts configured using annotations. If none are found, it will look for any
 // ServiceAccount configured through the pod-identity-webhook ConfigMap.
-func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
+func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64, found bool) {
+	return c.GetOrNotify(name, namespace, nil)
+}
+
+// GetOrNotify will return the cached configuration of the given ServiceAccount.
+// It will first look at the set of ServiceAccounts configured using annotations. If none is found, it will register
+// handler to be notified as soon as a ServiceAccount with given key is populated to the cache. Afterwards it will check
+// for a ServiceAccount configured through the pod-identity-webhook ConfigMap.
+func (c *serviceAccountCache) GetOrNotify(name, namespace string, handler chan any) (role, aud string, useRegionalSTS bool, tokenExpiration int64, found bool) {
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	{
-		resp := c.getSA(name, namespace)
+		resp := c.getSAorNotify(name, namespace, handler)
 		if resp != nil && resp.RoleARN != "" {
-			return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration
+			return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration, true
 		}
 	}
 	{
 		resp := c.getCM(name, namespace)
 		if resp != nil {
-			return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration
+			return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration, true
 		}
 	}
 	klog.V(5).Infof("Service account %s/%s not found in cache", namespace, name)
-	return "", "", false, pkg.DefaultTokenExpiration
+	return "", "", false, pkg.DefaultTokenExpiration, false
 }
 
 // GetCommonConfigurations returns the common configurations that also applies to the new mutation method(i.e Container Credentials).
 // The config file for the container credentials does not contain "TokenExpiration" or "UseRegionalSTS". For backward compatibility,
 // Use these fields if they are set in the sa annotations or config map.
 func (c *serviceAccountCache) GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64) {
-	if resp := c.getSA(name, namespace); resp != nil {
+	if resp := c.getSAorNotify(name, namespace, nil); resp != nil {
 		return resp.UseRegionalSTS, resp.TokenExpiration
 	} else if resp := c.getCM(name, namespace); resp != nil {
 		return resp.UseRegionalSTS, resp.TokenExpiration
@@ -117,11 +127,13 @@ func (c *serviceAccountCache) GetCommonConfigurations(name, namespace string) (u
 	return false, pkg.DefaultTokenExpiration
 }
 
-func (c *serviceAccountCache) getSA(name, namespace string) *CacheResponse {
+func (c *serviceAccountCache) getSAorNotify(name, namespace string, handler chan any) *CacheResponse {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	resp, ok := c.saCache[namespace+"/"+name]
-	if !ok {
+	if !ok && handler != nil {
+		klog.V(5).Infof("Service Account %s/%s not found in cache, adding notification handler", namespace, name)
+		c.notificationHandlers[namespace+"/"+name] = handler
 		return nil
 	}
 	return resp
@@ -212,8 +224,16 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 func (c *serviceAccountCache) setSA(name, namespace string, resp *CacheResponse) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	klog.V(5).Infof("Adding SA %s/%s to SA cache: %+v", namespace, name, resp)
+
+	key := namespace + "/" + name
+	klog.V(5).Infof("Adding SA %q to SA cache: %+v", key, resp)
 	c.saCache[namespace+"/"+name] = resp
+
+	if handler, found := c.notificationHandlers[key]; found {
+		klog.V(5).Infof("Notifying handler for %q", key)
+		handler <- 1
+		delete(c.notificationHandlers, key)
+	}
 }
 
 func (c *serviceAccountCache) setCM(name, namespace string, resp *CacheResponse) {
@@ -242,6 +262,7 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 		defaultTokenExpiration: defaultTokenExpiration,
 		hasSynced:              hasSynced,
 		webhookUsage:           webhookUsage,
+		notificationHandlers:   map[string]chan any{},
 	}
 
 	saInformer.Informer().AddEventHandler(

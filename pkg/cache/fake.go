@@ -44,14 +44,25 @@ var _ ServiceAccountCache = &FakeServiceAccountCache{}
 func (f *FakeServiceAccountCache) Start(chan struct{}) {}
 
 // Get gets a service account from the cache
-func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
+func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64, found bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	resp, ok := f.cache[namespace+"/"+name]
 	if !ok {
-		return "", "", false, pkg.DefaultTokenExpiration
+		return "", "", false, pkg.DefaultTokenExpiration, false
 	}
-	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration
+	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration, true
+}
+
+// GetOrNotify gets a service account from the cache
+func (f *FakeServiceAccountCache) GetOrNotify(name, namespace string, handler chan any) (role, aud string, useRegionalSTS bool, tokenExpiration int64, found bool) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	resp, ok := f.cache[namespace+"/"+name]
+	if !ok {
+		return "", "", false, pkg.DefaultTokenExpiration, false
+	}
+	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration, true
 }
 
 func (f *FakeServiceAccountCache) GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64) {

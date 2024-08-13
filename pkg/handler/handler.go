@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 
@@ -77,6 +78,12 @@ func WithAnnotationDomain(domain string) ModifierOpt {
 	return func(m *Modifier) { m.AnnotationDomain = domain }
 }
 
+// WithSALookupGraceTime sets the grace time to wait for service accounts to appear in cache
+func WithSALookupGraceTime(saLookupGraceTime time.Duration) ModifierOpt {
+	return func(m *Modifier) { m.saLookupGraceTime = saLookupGraceTime }
+
+}
+
 // NewModifier returns a Modifier with default values
 func NewModifier(opts ...ModifierOpt) *Modifier {
 	mod := &Modifier{
@@ -101,6 +108,7 @@ type Modifier struct {
 	ContainerCredentialsConfig containercredentials.Config
 	volName                    string
 	tokenName                  string
+	saLookupGraceTime          time.Duration
 }
 
 type patchOperation struct {
@@ -425,7 +433,24 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	}
 
 	// Use the STS WebIdentity method if set
-	roleArn, audience, regionalSTS, tokenExpiration := m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
+	handler := make(chan any, 1)
+	roleArn, audience, regionalSTS, tokenExpiration, found := m.Cache.GetOrNotify(pod.Spec.ServiceAccountName, pod.Namespace, handler)
+	key := pod.Namespace + "/" + pod.Spec.ServiceAccountName
+	if !found && m.saLookupGraceTime > 0 {
+		klog.Warningf("Service account %q not found in the cache. Waiting up to %s to be notified", key, m.saLookupGraceTime)
+		select {
+		case <-handler:
+			roleArn, audience, regionalSTS, tokenExpiration, found = m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
+			if !found {
+				klog.Warningf("Service account %q not found in the cache after being notified. Not mutating.", key)
+				return nil
+			}
+		case <-time.After(m.saLookupGraceTime):
+			klog.Warningf("Service account %q not found in the cache after %s. Not mutating.", key, m.saLookupGraceTime)
+			return nil
+		}
+	}
+	klog.V(5).Infof("Value of roleArn after after cache retrieval for service account %q: %s", key, roleArn)
 	if roleArn != "" {
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
 
