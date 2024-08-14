@@ -434,14 +434,14 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 
 	// Use the STS WebIdentity method if set
 	handler := make(chan any, 1)
-	roleArn, audience, regionalSTS, tokenExpiration, found := m.Cache.GetOrNotify(pod.Spec.ServiceAccountName, pod.Namespace, handler)
+	response := m.Cache.GetOrNotify(pod.Spec.ServiceAccountName, pod.Namespace, handler)
 	key := pod.Namespace + "/" + pod.Spec.ServiceAccountName
-	if !found && m.saLookupGraceTime > 0 {
+	if !response.FoundInSACache && !response.FoundInCMCache && m.saLookupGraceTime > 0 {
 		klog.Warningf("Service account %q not found in the cache. Waiting up to %s to be notified", key, m.saLookupGraceTime)
 		select {
 		case <-handler:
-			roleArn, audience, regionalSTS, tokenExpiration, found = m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
-			if !found {
+			response = m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
+			if !response.FoundInSACache && !response.FoundInCMCache {
 				klog.Warningf("Service account %q not found in the cache after being notified. Not mutating.", key)
 				return nil
 			}
@@ -450,21 +450,21 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 			return nil
 		}
 	}
-	klog.V(5).Infof("Value of roleArn after after cache retrieval for service account %q: %s", key, roleArn)
-	if roleArn != "" {
-		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
+	klog.V(5).Infof("Value of roleArn after after cache retrieval for service account %q: %s", key, response.RoleARN)
+	if response.RoleARN != "" {
+		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, response.TokenExpiration)
 
 		webhookPodCount.WithLabelValues("sts_web_identity").Inc()
 
 		return &podPatchConfig{
 			ContainersToSkip:                containersToSkip,
 			TokenExpiration:                 tokenExpiration,
-			UseRegionalSTS:                  regionalSTS,
-			Audience:                        audience,
+			UseRegionalSTS:                  response.UseRegionalSTS,
+			Audience:                        response.Audience,
 			MountPath:                       m.MountPath,
 			VolumeName:                      m.volName,
 			TokenPath:                       m.tokenName,
-			WebIdentityPatchConfig:          &webIdentityPatchConfig{RoleArn: roleArn},
+			WebIdentityPatchConfig:          &webIdentityPatchConfig{RoleArn: response.RoleARN},
 			ContainerCredentialsPatchConfig: nil,
 		}
 	}

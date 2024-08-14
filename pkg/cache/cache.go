@@ -33,17 +33,26 @@ import (
 	"k8s.io/klog/v2"
 )
 
-type CacheResponse struct {
+type Entry struct {
 	RoleARN         string
 	Audience        string
 	UseRegionalSTS  bool
 	TokenExpiration int64
 }
 
+type Response struct {
+	RoleARN         string
+	Audience        string
+	UseRegionalSTS  bool
+	TokenExpiration int64
+	FoundInSACache  bool
+	FoundInCMCache  bool
+}
+
 type ServiceAccountCache interface {
 	Start(stop chan struct{})
-	Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64, found bool)
-	GetOrNotify(name, namespace string, handler chan any) (role, aud string, useRegionalSTS bool, tokenExpiration int64, found bool)
+	Get(name, namespace string) Response
+	GetOrNotify(name, namespace string, handler chan any) Response
 	GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64)
 	// ToJSON returns cache contents as JSON string
 	ToJSON() string
@@ -51,8 +60,8 @@ type ServiceAccountCache interface {
 
 type serviceAccountCache struct {
 	mu                     sync.RWMutex // guards cache
-	saCache                map[string]*CacheResponse
-	cmCache                map[string]*CacheResponse
+	saCache                map[string]*Entry
+	cmCache                map[string]*Entry
 	hasSynced              cache.InformerSynced
 	clientset              kubernetes.Interface
 	annotationPrefix       string
@@ -89,7 +98,7 @@ func init() {
 // Get will return the cached configuration of the given ServiceAccount.
 // It will first look at the set of ServiceAccounts configured using annotations. If none are found, it will look for any
 // ServiceAccount configured through the pod-identity-webhook ConfigMap.
-func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64, found bool) {
+func (c *serviceAccountCache) Get(name, namespace string) Response {
 	return c.GetOrNotify(name, namespace, nil)
 }
 
@@ -97,22 +106,37 @@ func (c *serviceAccountCache) Get(name, namespace string) (role, aud string, use
 // It will first look at the set of ServiceAccounts configured using annotations. If none is found, it will register
 // handler to be notified as soon as a ServiceAccount with given key is populated to the cache. Afterwards it will check
 // for a ServiceAccount configured through the pod-identity-webhook ConfigMap.
-func (c *serviceAccountCache) GetOrNotify(name, namespace string, handler chan any) (role, aud string, useRegionalSTS bool, tokenExpiration int64, found bool) {
+func (c *serviceAccountCache) GetOrNotify(name, namespace string, handler chan any) Response {
+	result := Response{
+		TokenExpiration: pkg.DefaultTokenExpiration,
+	}
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	{
 		resp := c.getSAorNotify(name, namespace, handler)
+		if resp != nil {
+			result.FoundInSACache = true
+		}
 		if resp != nil && resp.RoleARN != "" {
-			return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration, true
+			result.RoleARN = resp.RoleARN
+			result.Audience = resp.Audience
+			result.UseRegionalSTS = resp.UseRegionalSTS
+			result.TokenExpiration = resp.TokenExpiration
+			return result
 		}
 	}
 	{
 		resp := c.getCM(name, namespace)
 		if resp != nil {
-			return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration, true
+			result.FoundInCMCache = true
+			result.RoleARN = resp.RoleARN
+			result.Audience = resp.Audience
+			result.UseRegionalSTS = resp.UseRegionalSTS
+			result.TokenExpiration = resp.TokenExpiration
+			return result
 		}
 	}
 	klog.V(5).Infof("Service account %s/%s not found in cache", namespace, name)
-	return "", "", false, pkg.DefaultTokenExpiration, false
+	return result
 }
 
 // GetCommonConfigurations returns the common configurations that also applies to the new mutation method(i.e Container Credentials).
@@ -127,7 +151,7 @@ func (c *serviceAccountCache) GetCommonConfigurations(name, namespace string) (u
 	return false, pkg.DefaultTokenExpiration
 }
 
-func (c *serviceAccountCache) getSAorNotify(name, namespace string, handler chan any) *CacheResponse {
+func (c *serviceAccountCache) getSAorNotify(name, namespace string, handler chan any) *Entry {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	resp, ok := c.saCache[namespace+"/"+name]
@@ -139,7 +163,7 @@ func (c *serviceAccountCache) getSAorNotify(name, namespace string, handler chan
 	return resp
 }
 
-func (c *serviceAccountCache) getCM(name, namespace string) *CacheResponse {
+func (c *serviceAccountCache) getCM(name, namespace string) *Entry {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	resp, ok := c.cmCache[namespace+"/"+name]
@@ -176,7 +200,7 @@ func (c *serviceAccountCache) ToJSON() string {
 }
 
 func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
-	resp := &CacheResponse{}
+	resp := &Entry{}
 
 	arn, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.RoleARNAnnotation]
 	if ok {
@@ -221,7 +245,7 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 	c.setSA(sa.Name, sa.Namespace, resp)
 }
 
-func (c *serviceAccountCache) setSA(name, namespace string, resp *CacheResponse) {
+func (c *serviceAccountCache) setSA(name, namespace string, resp *Entry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -236,7 +260,7 @@ func (c *serviceAccountCache) setSA(name, namespace string, resp *CacheResponse)
 	}
 }
 
-func (c *serviceAccountCache) setCM(name, namespace string, resp *CacheResponse) {
+func (c *serviceAccountCache) setCM(name, namespace string, resp *Entry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	klog.V(5).Infof("Adding SA %s/%s to CM cache: %+v", namespace, name, resp)
@@ -253,8 +277,8 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 	}
 
 	c := &serviceAccountCache{
-		saCache:                map[string]*CacheResponse{},
-		cmCache:                map[string]*CacheResponse{},
+		saCache:                map[string]*Entry{},
+		cmCache:                map[string]*Entry{},
 		defaultAudience:        defaultAudience,
 		annotationPrefix:       prefix,
 		defaultRegionalSTS:     defaultRegionalSTS,
@@ -319,7 +343,7 @@ func (c *serviceAccountCache) populateCacheFromCM(oldCM, newCM *v1.ConfigMap) er
 		return nil
 	}
 	newConfig := newCM.Data["config"]
-	sas := make(map[string]*CacheResponse)
+	sas := make(map[string]*Entry)
 	err := json.Unmarshal([]byte(newConfig), &sas)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal new config %q: %v", newConfig, err)
@@ -334,7 +358,7 @@ func (c *serviceAccountCache) populateCacheFromCM(oldCM, newCM *v1.ConfigMap) er
 
 	if oldCM != nil {
 		oldConfig := oldCM.Data["config"]
-		oldCache := make(map[string]*CacheResponse)
+		oldCache := make(map[string]*Entry)
 		err := json.Unmarshal([]byte(oldConfig), &oldCache)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal old config %q: %v", oldConfig, err)
