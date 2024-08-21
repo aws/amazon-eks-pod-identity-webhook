@@ -55,6 +55,45 @@ func TestSaCache(t *testing.T) {
 	assert.Equal(t, int64(3600), resp.TokenExpiration, "Expected token expiration to be 3600, got %d", resp.TokenExpiration)
 }
 
+func TestNotification(t *testing.T) {
+	cache := &serviceAccountCache{
+		saCache:              map[string]*Entry{},
+		notificationHandlers: map[string]chan struct{}{},
+		webhookUsage:         prometheus.NewGauge(prometheus.GaugeOpts{}),
+	}
+
+	// test that the requested SA is not in the cache
+	resp := cache.Get("foo", "default")
+	assert.False(t, resp.FoundInSACache, "Expected no cache entry to be found in SA cache")
+	assert.False(t, resp.FoundInCMCache, "Expected no cache entry to be found in CM cache")
+
+	// fetch with notification
+	notificationChannel := make(chan struct{}, 1)
+	cache.GetOrNotify("foo", "default", notificationChannel)
+
+	// asynchronously add the SA to the cache
+	go func() {
+		time.Sleep(1 * time.Millisecond)
+		cache.addSA(&v1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "foo",
+				Namespace: "default",
+			},
+		})
+	}()
+
+	// wait for the notification
+	select {
+	case <-notificationChannel:
+		// expected
+		// test that the requested SA is now in the cache
+		resp := cache.Get("foo", "default")
+		assert.True(t, resp.FoundInSACache, "Expected cache entry to be found in SA cache")
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for notification")
+	}
+}
+
 func TestNonRegionalSTS(t *testing.T) {
 	trueStr := "true"
 	falseStr := "false"
