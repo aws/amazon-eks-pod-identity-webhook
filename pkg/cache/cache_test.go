@@ -160,7 +160,6 @@ func TestNonRegionalSTS(t *testing.T) {
 				t.Fatalf("cache never called addSA: %v", err)
 			}
 
-			//gotRoleArn, gotAudience, useRegionalSTS, gotTokenExpiration, found := cache.Get("default", "default")
 			resp := cache.Get("default", "default")
 			assert.True(t, resp.FoundInSACache, "Expected cache entry to be found")
 			if resp.RoleARN != roleArn {

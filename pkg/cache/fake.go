@@ -61,7 +61,7 @@ func (f *FakeServiceAccountCache) Get(name, namespace string) Response {
 }
 
 // GetOrNotify gets a service account from the cache
-func (f *FakeServiceAccountCache) GetOrNotify(name, namespace string, handler chan any) Response {
+func (f *FakeServiceAccountCache) GetOrNotify(name, namespace string, handler chan struct{}) Response {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	resp, ok := f.cache[namespace+"/"+name]

@@ -52,7 +52,7 @@ type Response struct {
 type ServiceAccountCache interface {
 	Start(stop chan struct{})
 	Get(name, namespace string) Response
-	GetOrNotify(name, namespace string, handler chan any) Response
+	GetOrNotify(name, namespace string, handler chan struct{}) Response
 	GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64)
 	// ToJSON returns cache contents as JSON string
 	ToJSON() string
@@ -70,7 +70,7 @@ type serviceAccountCache struct {
 	composeRoleArn         ComposeRoleArn
 	defaultTokenExpiration int64
 	webhookUsage           prometheus.Gauge
-	notificationHandlers   map[string]chan any // type of channel doesn't matter. It's just for being notified
+	notificationHandlers   map[string]chan struct{}
 }
 
 type ComposeRoleArn struct {
@@ -106,32 +106,32 @@ func (c *serviceAccountCache) Get(name, namespace string) Response {
 // It will first look at the set of ServiceAccounts configured using annotations. If none is found, it will register
 // handler to be notified as soon as a ServiceAccount with given key is populated to the cache. Afterwards it will check
 // for a ServiceAccount configured through the pod-identity-webhook ConfigMap.
-func (c *serviceAccountCache) GetOrNotify(name, namespace string, handler chan any) Response {
+func (c *serviceAccountCache) GetOrNotify(name, namespace string, handler chan struct{}) Response {
 	result := Response{
 		TokenExpiration: pkg.DefaultTokenExpiration,
 	}
 	klog.V(5).Infof("Fetching sa %s/%s from cache", namespace, name)
 	{
-		resp := c.getSAorNotify(name, namespace, handler)
-		if resp != nil {
+		entry := c.getSAorNotify(name, namespace, handler)
+		if entry != nil {
 			result.FoundInSACache = true
 		}
-		if resp != nil && resp.RoleARN != "" {
-			result.RoleARN = resp.RoleARN
-			result.Audience = resp.Audience
-			result.UseRegionalSTS = resp.UseRegionalSTS
-			result.TokenExpiration = resp.TokenExpiration
+		if entry != nil && entry.RoleARN != "" {
+			result.RoleARN = entry.RoleARN
+			result.Audience = entry.Audience
+			result.UseRegionalSTS = entry.UseRegionalSTS
+			result.TokenExpiration = entry.TokenExpiration
 			return result
 		}
 	}
 	{
-		resp := c.getCM(name, namespace)
-		if resp != nil {
+		entry := c.getCM(name, namespace)
+		if entry != nil {
 			result.FoundInCMCache = true
-			result.RoleARN = resp.RoleARN
-			result.Audience = resp.Audience
-			result.UseRegionalSTS = resp.UseRegionalSTS
-			result.TokenExpiration = resp.TokenExpiration
+			result.RoleARN = entry.RoleARN
+			result.Audience = entry.Audience
+			result.UseRegionalSTS = entry.UseRegionalSTS
+			result.TokenExpiration = entry.TokenExpiration
 			return result
 		}
 	}
@@ -143,34 +143,34 @@ func (c *serviceAccountCache) GetOrNotify(name, namespace string, handler chan a
 // The config file for the container credentials does not contain "TokenExpiration" or "UseRegionalSTS". For backward compatibility,
 // Use these fields if they are set in the sa annotations or config map.
 func (c *serviceAccountCache) GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64) {
-	if resp := c.getSAorNotify(name, namespace, nil); resp != nil {
-		return resp.UseRegionalSTS, resp.TokenExpiration
-	} else if resp := c.getCM(name, namespace); resp != nil {
-		return resp.UseRegionalSTS, resp.TokenExpiration
+	if entry := c.getSAorNotify(name, namespace, nil); entry != nil {
+		return entry.UseRegionalSTS, entry.TokenExpiration
+	} else if entry := c.getCM(name, namespace); entry != nil {
+		return entry.UseRegionalSTS, entry.TokenExpiration
 	}
 	return false, pkg.DefaultTokenExpiration
 }
 
-func (c *serviceAccountCache) getSAorNotify(name, namespace string, handler chan any) *Entry {
+func (c *serviceAccountCache) getSAorNotify(name, namespace string, handler chan struct{}) *Entry {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	resp, ok := c.saCache[namespace+"/"+name]
+	entry, ok := c.saCache[namespace+"/"+name]
 	if !ok && handler != nil {
 		klog.V(5).Infof("Service Account %s/%s not found in cache, adding notification handler", namespace, name)
 		c.notificationHandlers[namespace+"/"+name] = handler
 		return nil
 	}
-	return resp
+	return entry
 }
 
 func (c *serviceAccountCache) getCM(name, namespace string) *Entry {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	resp, ok := c.cmCache[namespace+"/"+name]
+	entry, ok := c.cmCache[namespace+"/"+name]
 	if !ok {
 		return nil
 	}
-	return resp
+	return entry
 }
 
 func (c *serviceAccountCache) popSA(name, namespace string) {
@@ -200,7 +200,7 @@ func (c *serviceAccountCache) ToJSON() string {
 }
 
 func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
-	resp := &Entry{}
+	entry := &Entry{}
 
 	arn, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.RoleARNAnnotation]
 	if ok {
@@ -214,57 +214,57 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 		} else if !matched {
 			klog.Warningf("arn is invalid: %s", arn)
 		}
-		resp.RoleARN = arn
+		entry.RoleARN = arn
 	}
 
-	resp.Audience = c.defaultAudience
+	entry.Audience = c.defaultAudience
 	if audience, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.AudienceAnnotation]; ok {
-		resp.Audience = audience
+		entry.Audience = audience
 	}
 
-	resp.UseRegionalSTS = c.defaultRegionalSTS
+	entry.UseRegionalSTS = c.defaultRegionalSTS
 	if useRegionalStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.UseRegionalSTSAnnotation]; ok {
 		useRegional, err := strconv.ParseBool(useRegionalStr)
 		if err != nil {
 			klog.V(4).Infof("Ignoring service account %s/%s invalid value for disable-regional-sts annotation", sa.Namespace, sa.Name)
 		} else {
-			resp.UseRegionalSTS = useRegional
+			entry.UseRegionalSTS = useRegional
 		}
 	}
 
-	resp.TokenExpiration = c.defaultTokenExpiration
+	entry.TokenExpiration = c.defaultTokenExpiration
 	if tokenExpirationStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.TokenExpirationAnnotation]; ok {
 		if tokenExpiration, err := strconv.ParseInt(tokenExpirationStr, 10, 64); err != nil {
-			klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", resp.TokenExpiration, err)
+			klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", entry.TokenExpiration, err)
 		} else {
-			resp.TokenExpiration = pkg.ValidateMinTokenExpiration(tokenExpiration)
+			entry.TokenExpiration = pkg.ValidateMinTokenExpiration(tokenExpiration)
 		}
 	}
 	c.webhookUsage.Set(1)
 
-	c.setSA(sa.Name, sa.Namespace, resp)
+	c.setSA(sa.Name, sa.Namespace, entry)
 }
 
-func (c *serviceAccountCache) setSA(name, namespace string, resp *Entry) {
+func (c *serviceAccountCache) setSA(name, namespace string, entry *Entry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	key := namespace + "/" + name
-	klog.V(5).Infof("Adding SA %q to SA cache: %+v", key, resp)
-	c.saCache[namespace+"/"+name] = resp
+	klog.V(5).Infof("Adding SA %q to SA cache: %+v", key, entry)
+	c.saCache[key] = entry
 
 	if handler, found := c.notificationHandlers[key]; found {
 		klog.V(5).Infof("Notifying handler for %q", key)
-		handler <- 1
+		handler <- struct{}{}
 		delete(c.notificationHandlers, key)
 	}
 }
 
-func (c *serviceAccountCache) setCM(name, namespace string, resp *Entry) {
+func (c *serviceAccountCache) setCM(name, namespace string, entry *Entry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	klog.V(5).Infof("Adding SA %s/%s to CM cache: %+v", namespace, name, resp)
-	c.cmCache[namespace+"/"+name] = resp
+	klog.V(5).Infof("Adding SA %s/%s to CM cache: %+v", namespace, name, entry)
+	c.cmCache[namespace+"/"+name] = entry
 }
 
 func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenExpiration int64, saInformer coreinformers.ServiceAccountInformer, cmInformer coreinformers.ConfigMapInformer, composeRoleArn ComposeRoleArn) ServiceAccountCache {
@@ -286,7 +286,7 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 		defaultTokenExpiration: defaultTokenExpiration,
 		hasSynced:              hasSynced,
 		webhookUsage:           webhookUsage,
-		notificationHandlers:   map[string]chan any{},
+		notificationHandlers:   map[string]chan struct{}{},
 	}
 
 	saInformer.Informer().AddEventHandler(
@@ -348,12 +348,12 @@ func (c *serviceAccountCache) populateCacheFromCM(oldCM, newCM *v1.ConfigMap) er
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal new config %q: %v", newConfig, err)
 	}
-	for key, resp := range sas {
+	for key, entry := range sas {
 		parts := strings.Split(key, "/")
-		if resp.TokenExpiration == 0 {
-			resp.TokenExpiration = c.defaultTokenExpiration
+		if entry.TokenExpiration == 0 {
+			entry.TokenExpiration = c.defaultTokenExpiration
 		}
-		c.setCM(parts[1], parts[0], resp)
+		c.setCM(parts[1], parts[0], entry)
 	}
 
 	if oldCM != nil {

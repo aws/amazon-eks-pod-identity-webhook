@@ -83,22 +83,22 @@ func TestMutatePod(t *testing.T) {
 				want, _ := json.MarshalIndent(c.response, "", "  ")
 				t.Errorf("Unexpected response. Got \n%s\n wanted \n%s", string(got), string(want))
 			}
+			var expectedPatchOps, actualPatchOps []byte
 			if len(response.Patch) > 0 {
 				patchOps := make([]patchOperation, 0)
 				if err := json.Unmarshal(response.Patch, &patchOps); err != nil {
 					t.Errorf("Failed to unmarshal patch: %v", err)
 				}
-				indentedPatchOps, _ := json.MarshalIndent(patchOps, "", "  ")
-				t.Logf("got patch operations: %s", string(indentedPatchOps))
+				actualPatchOps, _ = json.MarshalIndent(patchOps, "", "  ")
 			}
 			if len(c.response.Patch) > 0 {
 				patchOps := make([]patchOperation, 0)
 				if err := json.Unmarshal(c.response.Patch, &patchOps); err != nil {
 					t.Errorf("Failed to unmarshal patch: %v", err)
 				}
-				indentedPatchOps, _ := json.MarshalIndent(patchOps, "", "  ")
-				t.Logf("wanted patch operations: %s", string(indentedPatchOps))
+				expectedPatchOps, _ = json.MarshalIndent(patchOps, "", "  ")
 			}
+			assert.Equal(t, string(expectedPatchOps), string(actualPatchOps))
 		})
 	}
 }

@@ -433,24 +433,24 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	}
 
 	// Use the STS WebIdentity method if set
-	handler := make(chan any, 1)
+	handler := make(chan struct{}, 1)
 	response := m.Cache.GetOrNotify(pod.Spec.ServiceAccountName, pod.Namespace, handler)
 	key := pod.Namespace + "/" + pod.Spec.ServiceAccountName
 	if !response.FoundInSACache && !response.FoundInCMCache && m.saLookupGraceTime > 0 {
-		klog.Warningf("Service account %q not found in the cache. Waiting up to %s to be notified", key, m.saLookupGraceTime)
+		klog.Warningf("Service account %s not found in the cache. Waiting up to %s to be notified", key, m.saLookupGraceTime)
 		select {
 		case <-handler:
 			response = m.Cache.Get(pod.Spec.ServiceAccountName, pod.Namespace)
 			if !response.FoundInSACache && !response.FoundInCMCache {
-				klog.Warningf("Service account %q not found in the cache after being notified. Not mutating.", key)
+				klog.Warningf("Service account %s not found in the cache after being notified. Not mutating.", key)
 				return nil
 			}
 		case <-time.After(m.saLookupGraceTime):
-			klog.Warningf("Service account %q not found in the cache after %s. Not mutating.", key, m.saLookupGraceTime)
+			klog.Warningf("Service account %s not found in the cache after %s. Not mutating.", key, m.saLookupGraceTime)
 			return nil
 		}
 	}
-	klog.V(5).Infof("Value of roleArn after after cache retrieval for service account %q: %s", key, response.RoleARN)
+	klog.V(5).Infof("Value of roleArn after after cache retrieval for service account %s: %s", key, response.RoleARN)
 	if response.RoleARN != "" {
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, response.TokenExpiration)
 
