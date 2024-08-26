@@ -3,6 +3,7 @@ package cache
 import (
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func TestSaCache(t *testing.T) {
 		webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
 	}
 
-	resp := cache.Get("default", "default")
+	resp := cache.Get(Request{Name: "default", Namespace: "default"})
 
 	assert.False(t, resp.FoundInCMCache, "Expected no cache entry to be found")
 	assert.False(t, resp.FoundInSACache, "Expected no cache entry to be found")
@@ -46,7 +47,7 @@ func TestSaCache(t *testing.T) {
 
 	cache.addSA(testSA)
 
-	resp = cache.Get("default", "default")
+	resp = cache.Get(Request{Name: "default", Namespace: "default"})
 
 	assert.True(t, resp.FoundInSACache, "Expected cache entry to be found")
 	assert.Equal(t, roleArn, resp.RoleARN, "Expected role to be %s, got %s", roleArn, resp.RoleARN)
@@ -56,42 +57,102 @@ func TestSaCache(t *testing.T) {
 }
 
 func TestNotification(t *testing.T) {
-	cache := &serviceAccountCache{
-		saCache:              map[string]*Entry{},
-		notificationHandlers: map[string]chan struct{}{},
-		webhookUsage:         prometheus.NewGauge(prometheus.GaugeOpts{}),
+	reqWithNotification := Request{
+		Name:                "foo",
+		Namespace:           "default",
+		RequestNotification: true,
+	}
+	reqWithoutNotification := Request{
+		Name:                "foo",
+		Namespace:           "default",
+		RequestNotification: false,
 	}
 
-	// test that the requested SA is not in the cache
-	resp := cache.Get("foo", "default")
-	assert.False(t, resp.FoundInSACache, "Expected no cache entry to be found in SA cache")
-	assert.False(t, resp.FoundInCMCache, "Expected no cache entry to be found in CM cache")
+	t.Run("with one notification handler", func(t *testing.T) {
+		cache := &serviceAccountCache{
+			saCache:              map[string]*Entry{},
+			notificationHandlers: map[string]chan struct{}{},
+			webhookUsage:         prometheus.NewGauge(prometheus.GaugeOpts{}),
+		}
 
-	// fetch with notification
-	notificationChannel := make(chan struct{}, 1)
-	cache.GetOrNotify("foo", "default", notificationChannel)
+		// test that the requested SA is not in the cache
+		resp := cache.Get(reqWithoutNotification)
+		assert.False(t, resp.FoundInSACache, "Expected no cache entry to be found in SA cache")
+		assert.False(t, resp.FoundInCMCache, "Expected no cache entry to be found in CM cache")
 
-	// asynchronously add the SA to the cache
-	go func() {
-		time.Sleep(1 * time.Millisecond)
-		cache.addSA(&v1.ServiceAccount{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "foo",
-				Namespace: "default",
-			},
-		})
-	}()
+		// fetch with notification
+		resp = cache.Get(reqWithNotification)
 
-	// wait for the notification
-	select {
-	case <-notificationChannel:
-		// expected
-		// test that the requested SA is now in the cache
-		resp := cache.Get("foo", "default")
-		assert.True(t, resp.FoundInSACache, "Expected cache entry to be found in SA cache")
-	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for notification")
-	}
+		// asynchronously add the SA to the cache
+		go func() {
+			time.Sleep(1 * time.Millisecond)
+			cache.addSA(&v1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "default",
+				},
+			})
+		}()
+
+		// wait for the notification
+		select {
+		case <-resp.Notifier:
+			// expected
+			// test that the requested SA is now in the cache
+			resp := cache.Get(reqWithoutNotification)
+			assert.True(t, resp.FoundInSACache, "Expected cache entry to be found in SA cache")
+		case <-time.After(1 * time.Second):
+			t.Fatal("timeout waiting for notification")
+		}
+	})
+
+	t.Run("with 10 notification handlers", func(t *testing.T) {
+		cache := &serviceAccountCache{
+			saCache:              map[string]*Entry{},
+			notificationHandlers: map[string]chan struct{}{},
+			webhookUsage:         prometheus.NewGauge(prometheus.GaugeOpts{}),
+		}
+
+		// test that the requested SA is not in the cache
+		resp := cache.Get(reqWithoutNotification)
+		assert.False(t, resp.FoundInSACache, "Expected no cache entry to be found in SA cache")
+		assert.False(t, resp.FoundInCMCache, "Expected no cache entry to be found in CM cache")
+
+		// fetch with notification
+		resp = cache.Get(reqWithNotification)
+
+		wg := sync.WaitGroup{}
+
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				// wait for the notification
+				select {
+				case <-resp.Notifier:
+					// expected
+					// test that the requested SA is now in the cache
+					resp := cache.Get(reqWithoutNotification)
+					assert.True(t, resp.FoundInSACache, "Expected cache entry to be found in SA cache")
+				case <-time.After(1 * time.Second):
+					t.Error("timeout waiting for notification")
+				}
+				wg.Done()
+			}()
+		}
+
+		// asynchronously add the SA to the cache
+		go func() {
+			time.Sleep(1 * time.Millisecond)
+			cache.addSA(&v1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "default",
+				},
+			})
+		}()
+
+		wg.Wait()
+	})
 }
 
 func TestNonRegionalSTS(t *testing.T) {
@@ -199,7 +260,7 @@ func TestNonRegionalSTS(t *testing.T) {
 				t.Fatalf("cache never called addSA: %v", err)
 			}
 
-			resp := cache.Get("default", "default")
+			resp := cache.Get(Request{Name: "default", Namespace: "default"})
 			assert.True(t, resp.FoundInSACache, "Expected cache entry to be found")
 			if resp.RoleARN != roleArn {
 				t.Errorf("got roleArn %v, expected %v", resp.RoleARN, roleArn)
@@ -245,7 +306,7 @@ func TestPopulateCacheFromCM(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		resp := c.Get("mysa2", "myns2")
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
 		if resp.RoleARN == "" {
 			t.Errorf("cloud not find entry that should have been added")
 		}
@@ -257,7 +318,7 @@ func TestPopulateCacheFromCM(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		resp := c.Get("mysa2", "myns2")
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
 		if resp.RoleARN == "" {
 			t.Errorf("cloud not find entry that should have been added")
 		}
@@ -269,7 +330,7 @@ func TestPopulateCacheFromCM(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		resp := c.Get("mysa2", "myns2")
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
 		if resp.RoleARN != "" {
 			t.Errorf("found entry that should have been removed")
 		}
@@ -299,7 +360,7 @@ func TestSAAnnotationRemoval(t *testing.T) {
 	c.addSA(oldSA)
 
 	{
-		resp := c.Get("default", "default")
+		resp := c.Get(Request{Name: "default", Namespace: "default"})
 		if resp.RoleARN != roleArn {
 			t.Errorf("got roleArn %q, expected %q", resp.RoleARN, roleArn)
 		}
@@ -311,7 +372,7 @@ func TestSAAnnotationRemoval(t *testing.T) {
 	c.addSA(newSA)
 
 	{
-		resp := c.Get("default", "default")
+		resp := c.Get(Request{Name: "default", Namespace: "default"})
 		if resp.RoleARN != "" {
 			t.Errorf("got roleArn %v, expected %q", resp.RoleARN, "")
 		}
@@ -366,7 +427,7 @@ func TestCachePrecedence(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		resp := c.Get("mysa2", "myns2")
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
 		if resp.RoleARN == "" {
 			t.Errorf("could not find entry that should have been added")
 		}
@@ -383,7 +444,7 @@ func TestCachePrecedence(t *testing.T) {
 		}
 
 		// Removing sa2 from CM, but SA still exists
-		resp := c.Get("mysa2", "myns2")
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
 		if resp.RoleARN == "" {
 			t.Errorf("could not find entry that should still exist")
 		}
@@ -399,7 +460,7 @@ func TestCachePrecedence(t *testing.T) {
 		c.addSA(sa2)
 
 		// Neither cache should return any hits now
-		resp := c.Get("myns2", "mysa2")
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
 		if resp.RoleARN != "" {
 			t.Errorf("found entry that should not exist")
 		}
@@ -413,7 +474,7 @@ func TestCachePrecedence(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		resp := c.Get("mysa2", "myns2")
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
 		if resp.RoleARN == "" {
 			t.Errorf("cloud not find entry that should have been added")
 		}
@@ -465,7 +526,7 @@ func TestRoleArnComposition(t *testing.T) {
 
 	var resp Response
 	err := wait.ExponentialBackoff(wait.Backoff{Duration: 10 * time.Millisecond, Factor: 1.0, Steps: 3}, func() (bool, error) {
-		resp = cache.Get("default", "default")
+		resp = cache.Get(Request{Name: "default", Namespace: "default"})
 		return resp.RoleARN != "", nil
 	})
 	if err != nil {

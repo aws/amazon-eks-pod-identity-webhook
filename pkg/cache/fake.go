@@ -44,27 +44,10 @@ var _ ServiceAccountCache = &FakeServiceAccountCache{}
 func (f *FakeServiceAccountCache) Start(chan struct{}) {}
 
 // Get gets a service account from the cache
-func (f *FakeServiceAccountCache) Get(name, namespace string) Response {
+func (f *FakeServiceAccountCache) Get(req Request) Response {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	resp, ok := f.cache[namespace+"/"+name]
-	if !ok {
-		return Response{TokenExpiration: pkg.DefaultTokenExpiration}
-	}
-	return Response{
-		RoleARN:         resp.RoleARN,
-		Audience:        resp.Audience,
-		UseRegionalSTS:  resp.UseRegionalSTS,
-		TokenExpiration: resp.TokenExpiration,
-		FoundInSACache:  true,
-	}
-}
-
-// GetOrNotify gets a service account from the cache
-func (f *FakeServiceAccountCache) GetOrNotify(name, namespace string, handler chan struct{}) Response {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	resp, ok := f.cache[namespace+"/"+name]
+	resp, ok := f.cache[req.CacheKey()]
 	if !ok {
 		return Response{TokenExpiration: pkg.DefaultTokenExpiration}
 	}
