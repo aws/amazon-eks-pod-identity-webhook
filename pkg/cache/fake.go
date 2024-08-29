@@ -56,7 +56,7 @@ func (f *FakeServiceAccountCache) Get(req Request) Response {
 		Audience:        resp.Audience,
 		UseRegionalSTS:  resp.UseRegionalSTS,
 		TokenExpiration: resp.TokenExpiration,
-		FoundInSACache:  true,
+		FoundInCache:    true,
 	}
 }
 

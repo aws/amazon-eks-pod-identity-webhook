@@ -39,8 +39,7 @@ func TestSaCache(t *testing.T) {
 
 	resp := cache.Get(Request{Name: "default", Namespace: "default"})
 
-	assert.False(t, resp.FoundInCMCache, "Expected no cache entry to be found")
-	assert.False(t, resp.FoundInSACache, "Expected no cache entry to be found")
+	assert.False(t, resp.FoundInCache, "Expected no cache entry to be found")
 	if resp.RoleARN != "" || resp.Audience != "" {
 		t.Errorf("Expected role and aud to be empty, got %v", resp)
 	}
@@ -49,7 +48,7 @@ func TestSaCache(t *testing.T) {
 
 	resp = cache.Get(Request{Name: "default", Namespace: "default"})
 
-	assert.True(t, resp.FoundInSACache, "Expected cache entry to be found")
+	assert.True(t, resp.FoundInCache, "Expected cache entry to be found")
 	assert.Equal(t, roleArn, resp.RoleARN, "Expected role to be %s, got %s", roleArn, resp.RoleARN)
 	assert.Equal(t, "sts.amazonaws.com", resp.Audience, "Expected aud to be sts.amzonaws.com, got %s", resp.Audience)
 	assert.True(t, resp.UseRegionalSTS, "Expected regional STS to be true, got false")
@@ -77,8 +76,7 @@ func TestNotification(t *testing.T) {
 
 		// test that the requested SA is not in the cache
 		resp := cache.Get(reqWithoutNotification)
-		assert.False(t, resp.FoundInSACache, "Expected no cache entry to be found in SA cache")
-		assert.False(t, resp.FoundInCMCache, "Expected no cache entry to be found in CM cache")
+		assert.False(t, resp.FoundInCache, "Expected no cache entry to be found in cache")
 
 		// fetch with notification
 		resp = cache.Get(reqWithNotification)
@@ -100,7 +98,7 @@ func TestNotification(t *testing.T) {
 			// expected
 			// test that the requested SA is now in the cache
 			resp := cache.Get(reqWithoutNotification)
-			assert.True(t, resp.FoundInSACache, "Expected cache entry to be found in SA cache")
+			assert.True(t, resp.FoundInCache, "Expected cache entry to be found in cache")
 		case <-time.After(1 * time.Second):
 			t.Fatal("timeout waiting for notification")
 		}
@@ -115,8 +113,7 @@ func TestNotification(t *testing.T) {
 
 		// test that the requested SA is not in the cache
 		resp := cache.Get(reqWithoutNotification)
-		assert.False(t, resp.FoundInSACache, "Expected no cache entry to be found in SA cache")
-		assert.False(t, resp.FoundInCMCache, "Expected no cache entry to be found in CM cache")
+		assert.False(t, resp.FoundInCache, "Expected no cache entry to be found in cache")
 
 		// fetch with notification
 		resp = cache.Get(reqWithNotification)
@@ -126,17 +123,18 @@ func TestNotification(t *testing.T) {
 		for i := 0; i < 10; i++ {
 			wg.Add(1)
 			go func() {
+				defer wg.Done()
+
 				// wait for the notification
 				select {
 				case <-resp.Notifier:
 					// expected
 					// test that the requested SA is now in the cache
 					resp := cache.Get(reqWithoutNotification)
-					assert.True(t, resp.FoundInSACache, "Expected cache entry to be found in SA cache")
+					assert.True(t, resp.FoundInCache, "Expected cache entry to be found in cache")
 				case <-time.After(1 * time.Second):
 					t.Error("timeout waiting for notification")
 				}
-				wg.Done()
 			}()
 		}
 
@@ -261,7 +259,7 @@ func TestNonRegionalSTS(t *testing.T) {
 			}
 
 			resp := cache.Get(Request{Name: "default", Namespace: "default"})
-			assert.True(t, resp.FoundInSACache, "Expected cache entry to be found")
+			assert.True(t, resp.FoundInCache, "Expected cache entry to be found")
 			if resp.RoleARN != roleArn {
 				t.Errorf("got roleArn %v, expected %v", resp.RoleARN, roleArn)
 			}

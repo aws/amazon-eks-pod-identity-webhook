@@ -59,9 +59,8 @@ type Response struct {
 	Audience        string
 	UseRegionalSTS  bool
 	TokenExpiration int64
-	FoundInSACache  bool
-	FoundInCMCache  bool
-	Notifier        chan struct{}
+	FoundInCache    bool
+	Notifier        <-chan struct{}
 }
 
 type ServiceAccountCache interface {
@@ -123,7 +122,7 @@ func (c *serviceAccountCache) Get(req Request) Response {
 		var entry *Entry
 		entry, result.Notifier = c.getSA(req)
 		if entry != nil {
-			result.FoundInSACache = true
+			result.FoundInCache = true
 		}
 		if entry != nil && entry.RoleARN != "" {
 			result.RoleARN = entry.RoleARN
@@ -136,7 +135,7 @@ func (c *serviceAccountCache) Get(req Request) Response {
 	{
 		entry := c.getCM(req.Name, req.Namespace)
 		if entry != nil {
-			result.FoundInCMCache = true
+			result.FoundInCache = true
 			result.RoleARN = entry.RoleARN
 			result.Audience = entry.Audience
 			result.UseRegionalSTS = entry.UseRegionalSTS
