@@ -49,10 +49,6 @@ type Request struct {
 func (r Request) CacheKey() string {
 	return r.Namespace + "/" + r.Name
 }
-func (r Request) WithNotification() Request {
-	r.RequestNotification = true
-	return r
-}
 
 type Response struct {
 	RoleARN         string
