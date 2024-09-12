@@ -12,12 +12,12 @@ import (
 // FakeServiceAccountCache is a goroutine safe cache for testing
 type FakeServiceAccountCache struct {
 	mu    sync.RWMutex // guards cache
-	cache map[string]*CacheResponse
+	cache map[string]*Entry
 }
 
 func NewFakeServiceAccountCache(accounts ...*v1.ServiceAccount) *FakeServiceAccountCache {
 	c := &FakeServiceAccountCache{
-		cache: map[string]*CacheResponse{},
+		cache: map[string]*Entry{},
 	}
 	for _, sa := range accounts {
 		arn, _ := sa.Annotations["eks.amazonaws.com/role-arn"]
@@ -44,14 +44,20 @@ var _ ServiceAccountCache = &FakeServiceAccountCache{}
 func (f *FakeServiceAccountCache) Start(chan struct{}) {}
 
 // Get gets a service account from the cache
-func (f *FakeServiceAccountCache) Get(name, namespace string) (role, aud string, useRegionalSTS bool, tokenExpiration int64) {
+func (f *FakeServiceAccountCache) Get(req Request) Response {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	resp, ok := f.cache[namespace+"/"+name]
+	resp, ok := f.cache[req.CacheKey()]
 	if !ok {
-		return "", "", false, pkg.DefaultTokenExpiration
+		return Response{TokenExpiration: pkg.DefaultTokenExpiration}
 	}
-	return resp.RoleARN, resp.Audience, resp.UseRegionalSTS, resp.TokenExpiration
+	return Response{
+		RoleARN:         resp.RoleARN,
+		Audience:        resp.Audience,
+		UseRegionalSTS:  resp.UseRegionalSTS,
+		TokenExpiration: resp.TokenExpiration,
+		FoundInCache:    true,
+	}
 }
 
 func (f *FakeServiceAccountCache) GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64) {
@@ -68,7 +74,7 @@ func (f *FakeServiceAccountCache) GetCommonConfigurations(name, namespace string
 func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string, regionalSTS bool, tokenExpiration int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.cache[namespace+"/"+name] = &CacheResponse{
+	f.cache[namespace+"/"+name] = &Entry{
 		RoleARN:         role,
 		Audience:        aud,
 		UseRegionalSTS:  regionalSTS,

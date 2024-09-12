@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"io"
 	"io/ioutil"
+	"k8s.io/apimachinery/pkg/types"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -36,12 +37,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+const uuid = "918ef1dc-928f-4525-99ef-988389f263c3"
+
 func TestMutatePod(t *testing.T) {
 	testServiceAccount := &v1.ServiceAccount{}
 	testServiceAccount.Name = "default"
 	testServiceAccount.Namespace = "default"
 	testServiceAccount.Annotations = map[string]string{
-		"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/s3-reader",
+		"eks.amazonaws.com/role-arn":         "arn:aws:iam::111122223333:role/s3-reader",
+		"eks.amazonaws.com/token-expiration": "3600",
 	}
 
 	modifier := NewModifier(
@@ -63,6 +67,11 @@ func TestMutatePod(t *testing.T) {
 			&v1beta1.AdmissionReview{Request: nil},
 			&v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "bad content"}},
 		},
+		{
+			"ValidRequest",
+			getValidReview(rawPodWithoutVolume),
+			getValidHandlerResponse(""),
+		},
 	}
 
 	for _, c := range cases {
@@ -74,6 +83,22 @@ func TestMutatePod(t *testing.T) {
 				want, _ := json.MarshalIndent(c.response, "", "  ")
 				t.Errorf("Unexpected response. Got \n%s\n wanted \n%s", string(got), string(want))
 			}
+			var expectedPatchOps, actualPatchOps []byte
+			if len(response.Patch) > 0 {
+				patchOps := make([]patchOperation, 0)
+				if err := json.Unmarshal(response.Patch, &patchOps); err != nil {
+					t.Errorf("Failed to unmarshal patch: %v", err)
+				}
+				actualPatchOps, _ = json.MarshalIndent(patchOps, "", "  ")
+			}
+			if len(c.response.Patch) > 0 {
+				patchOps := make([]patchOperation, 0)
+				if err := json.Unmarshal(c.response.Patch, &patchOps); err != nil {
+					t.Errorf("Failed to unmarshal patch: %v", err)
+				}
+				expectedPatchOps, _ = json.MarshalIndent(patchOps, "", "  ")
+			}
+			assert.Equal(t, string(expectedPatchOps), string(actualPatchOps))
 		})
 	}
 }
@@ -113,17 +138,19 @@ var rawPodWithoutVolume = []byte(`
 
 var validPatchIfNoVolumesPresent = []byte(`[{"op":"add","path":"/spec/volumes","value":[{"name":"aws-iam-token","projected":{"sources":[{"serviceAccountToken":{"audience":"sts.amazonaws.com","expirationSeconds":3600,"path":"token"}}]}}]},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","readOnly":true,"mountPath":"/var/run/secrets/eks.amazonaws.com/serviceaccount"}]}]}]`)
 
-var validHandlerResponse = &v1beta1.AdmissionResponse{
-	UID:       "918ef1dc-928f-4525-99ef-988389f263c3",
-	Allowed:   true,
-	Patch:     validPatchIfNoVolumesPresent,
-	PatchType: &jsonPatchType,
+func getValidHandlerResponse(uuid string) *v1beta1.AdmissionResponse {
+	return &v1beta1.AdmissionResponse{
+		UID:       types.UID(uuid),
+		Allowed:   true,
+		Patch:     validPatchIfNoVolumesPresent,
+		PatchType: &jsonPatchType,
+	}
 }
 
 func getValidReview(pod []byte) *v1beta1.AdmissionReview {
 	return &v1beta1.AdmissionReview{
 		Request: &v1beta1.AdmissionRequest{
-			UID: "918ef1dc-928f-4525-99ef-988389f263c3",
+			UID: uuid,
 			Kind: metav1.GroupVersionKind{
 				Version: "v1",
 				Kind:    "Pod",
@@ -216,7 +243,7 @@ func TestModifierHandler(t *testing.T) {
 			"ValidRequestSuccessWithoutVolumes",
 			serializeAdmissionReview(t, getValidReview(rawPodWithoutVolume)),
 			"application/json",
-			serializeAdmissionReview(t, &v1beta1.AdmissionReview{Response: validHandlerResponse}),
+			serializeAdmissionReview(t, &v1beta1.AdmissionReview{Response: getValidHandlerResponse(uuid)}),
 		},
 	}
 

@@ -83,7 +83,7 @@ func TestLister(t *testing.T) {
 				t.Errorf("Failed to read response: %v", err)
 				return
 			}
-			m := map[string]cache.CacheResponse{}
+			m := map[string]cache.Entry{}
 			err = json.Unmarshal(responseBytes, &m)
 			if err != nil {
 				t.Errorf("Failed to unmarshal: %v", err)

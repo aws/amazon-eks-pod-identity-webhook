@@ -3,6 +3,7 @@ package cache
 import (
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,26 +31,126 @@ func TestSaCache(t *testing.T) {
 	}
 
 	cache := &serviceAccountCache{
-		saCache:          map[string]*CacheResponse{},
+		saCache:          map[string]*Entry{},
 		defaultAudience:  "sts.amazonaws.com",
 		annotationPrefix: "eks.amazonaws.com",
 		webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
 	}
 
-	role, aud, useRegionalSTS, tokenExpiration := cache.Get("default", "default")
+	resp := cache.Get(Request{Name: "default", Namespace: "default"})
 
-	if role != "" || aud != "" {
-		t.Errorf("Expected role and aud to be empty, got %s, %s, %t, %d", role, aud, useRegionalSTS, tokenExpiration)
+	assert.False(t, resp.FoundInCache, "Expected no cache entry to be found")
+	if resp.RoleARN != "" || resp.Audience != "" {
+		t.Errorf("Expected role and aud to be empty, got %v", resp)
 	}
 
 	cache.addSA(testSA)
 
-	role, aud, useRegionalSTS, tokenExpiration = cache.Get("default", "default")
+	resp = cache.Get(Request{Name: "default", Namespace: "default"})
 
-	assert.Equal(t, roleArn, role, "Expected role to be %s, got %s", roleArn, role)
-	assert.Equal(t, "sts.amazonaws.com", aud, "Expected aud to be sts.amzonaws.com, got %s", aud)
-	assert.True(t, useRegionalSTS, "Expected regional STS to be true, got false")
-	assert.Equal(t, int64(3600), tokenExpiration, "Expected token expiration to be 3600, got %d", tokenExpiration)
+	assert.True(t, resp.FoundInCache, "Expected cache entry to be found")
+	assert.Equal(t, roleArn, resp.RoleARN, "Expected role to be %s, got %s", roleArn, resp.RoleARN)
+	assert.Equal(t, "sts.amazonaws.com", resp.Audience, "Expected aud to be sts.amzonaws.com, got %s", resp.Audience)
+	assert.True(t, resp.UseRegionalSTS, "Expected regional STS to be true, got false")
+	assert.Equal(t, int64(3600), resp.TokenExpiration, "Expected token expiration to be 3600, got %d", resp.TokenExpiration)
+}
+
+func TestNotification(t *testing.T) {
+	reqWithNotification := Request{
+		Name:                "foo",
+		Namespace:           "default",
+		RequestNotification: true,
+	}
+	reqWithoutNotification := Request{
+		Name:                "foo",
+		Namespace:           "default",
+		RequestNotification: false,
+	}
+
+	t.Run("with one notification handler", func(t *testing.T) {
+		cache := &serviceAccountCache{
+			saCache:              map[string]*Entry{},
+			notificationHandlers: map[string]chan struct{}{},
+			webhookUsage:         prometheus.NewGauge(prometheus.GaugeOpts{}),
+		}
+
+		// test that the requested SA is not in the cache
+		resp := cache.Get(reqWithoutNotification)
+		assert.False(t, resp.FoundInCache, "Expected no cache entry to be found in cache")
+
+		// fetch with notification
+		resp = cache.Get(reqWithNotification)
+
+		// asynchronously add the SA to the cache
+		go func() {
+			time.Sleep(1 * time.Millisecond)
+			cache.addSA(&v1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "default",
+				},
+			})
+		}()
+
+		// wait for the notification
+		select {
+		case <-resp.Notifier:
+			// expected
+			// test that the requested SA is now in the cache
+			resp := cache.Get(reqWithoutNotification)
+			assert.True(t, resp.FoundInCache, "Expected cache entry to be found in cache")
+		case <-time.After(1 * time.Second):
+			t.Fatal("timeout waiting for notification")
+		}
+	})
+
+	t.Run("with 10 notification handlers", func(t *testing.T) {
+		cache := &serviceAccountCache{
+			saCache:              map[string]*Entry{},
+			notificationHandlers: map[string]chan struct{}{},
+			webhookUsage:         prometheus.NewGauge(prometheus.GaugeOpts{}),
+		}
+
+		// test that the requested SA is not in the cache
+		resp := cache.Get(reqWithoutNotification)
+		assert.False(t, resp.FoundInCache, "Expected no cache entry to be found in cache")
+
+		// fetch with notification
+		resp = cache.Get(reqWithNotification)
+
+		wg := sync.WaitGroup{}
+
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				// wait for the notification
+				select {
+				case <-resp.Notifier:
+					// expected
+					// test that the requested SA is now in the cache
+					resp := cache.Get(reqWithoutNotification)
+					assert.True(t, resp.FoundInCache, "Expected cache entry to be found in cache")
+				case <-time.After(1 * time.Second):
+					t.Error("timeout waiting for notification")
+				}
+			}()
+		}
+
+		// asynchronously add the SA to the cache
+		go func() {
+			time.Sleep(1 * time.Millisecond)
+			cache.addSA(&v1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "default",
+				},
+			})
+		}()
+
+		wg.Wait()
+	})
 }
 
 func TestNonRegionalSTS(t *testing.T) {
@@ -157,18 +258,19 @@ func TestNonRegionalSTS(t *testing.T) {
 				t.Fatalf("cache never called addSA: %v", err)
 			}
 
-			gotRoleArn, gotAudience, useRegionalSTS, gotTokenExpiration := cache.Get("default", "default")
-			if gotRoleArn != roleArn {
-				t.Errorf("got roleArn %v, expected %v", gotRoleArn, roleArn)
+			resp := cache.Get(Request{Name: "default", Namespace: "default"})
+			assert.True(t, resp.FoundInCache, "Expected cache entry to be found")
+			if resp.RoleARN != roleArn {
+				t.Errorf("got roleArn %v, expected %v", resp.RoleARN, roleArn)
 			}
-			if gotAudience != audience {
-				t.Errorf("got audience %v, expected %v", gotAudience, audience)
+			if resp.Audience != audience {
+				t.Errorf("got audience %v, expected %v", resp.Audience, audience)
 			}
-			if strconv.Itoa(int(gotTokenExpiration)) != tokenExpiration {
-				t.Errorf("got token expiration %v, expected %v", gotTokenExpiration, tokenExpiration)
+			if strconv.Itoa(int(resp.TokenExpiration)) != tokenExpiration {
+				t.Errorf("got token expiration %v, expected %v", resp.TokenExpiration, tokenExpiration)
 			}
-			if useRegionalSTS != tc.expectedUseRegionalSts {
-				t.Errorf("got use regional STS %v, expected %v", useRegionalSTS, tc.expectedUseRegionalSts)
+			if resp.UseRegionalSTS != tc.expectedUseRegionalSts {
+				t.Errorf("got use regional STS %v, expected %v", resp.UseRegionalSTS, tc.expectedUseRegionalSts)
 			}
 		})
 	}
@@ -193,7 +295,7 @@ func TestPopulateCacheFromCM(t *testing.T) {
 	}
 
 	c := serviceAccountCache{
-		cmCache: make(map[string]*CacheResponse),
+		cmCache: make(map[string]*Entry),
 	}
 
 	{
@@ -202,8 +304,8 @@ func TestPopulateCacheFromCM(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		role, _, _, _ := c.Get("mysa2", "myns2")
-		if role == "" {
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
+		if resp.RoleARN == "" {
 			t.Errorf("cloud not find entry that should have been added")
 		}
 	}
@@ -214,8 +316,8 @@ func TestPopulateCacheFromCM(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		role, _, _, _ := c.Get("mysa2", "myns2")
-		if role == "" {
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
+		if resp.RoleARN == "" {
 			t.Errorf("cloud not find entry that should have been added")
 		}
 	}
@@ -226,8 +328,8 @@ func TestPopulateCacheFromCM(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		role, _, _, _ := c.Get("mysa2", "myns2")
-		if role != "" {
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
+		if resp.RoleARN != "" {
 			t.Errorf("found entry that should have been removed")
 		}
 	}
@@ -248,7 +350,7 @@ func TestSAAnnotationRemoval(t *testing.T) {
 	}
 
 	c := serviceAccountCache{
-		saCache:          make(map[string]*CacheResponse),
+		saCache:          make(map[string]*Entry),
 		annotationPrefix: "eks.amazonaws.com",
 		webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
 	}
@@ -256,9 +358,9 @@ func TestSAAnnotationRemoval(t *testing.T) {
 	c.addSA(oldSA)
 
 	{
-		gotRoleArn, _, _, _ := c.Get("default", "default")
-		if gotRoleArn != roleArn {
-			t.Errorf("got roleArn %q, expected %q", gotRoleArn, roleArn)
+		resp := c.Get(Request{Name: "default", Namespace: "default"})
+		if resp.RoleARN != roleArn {
+			t.Errorf("got roleArn %q, expected %q", resp.RoleARN, roleArn)
 		}
 	}
 
@@ -268,9 +370,9 @@ func TestSAAnnotationRemoval(t *testing.T) {
 	c.addSA(newSA)
 
 	{
-		gotRoleArn, _, _, _ := c.Get("default", "default")
-		if gotRoleArn != "" {
-			t.Errorf("got roleArn %v, expected %q", gotRoleArn, "")
+		resp := c.Get(Request{Name: "default", Namespace: "default"})
+		if resp.RoleARN != "" {
+			t.Errorf("got roleArn %v, expected %q", resp.RoleARN, "")
 		}
 	}
 }
@@ -309,8 +411,8 @@ func TestCachePrecedence(t *testing.T) {
 	sa2.ObjectMeta.Annotations = make(map[string]string)
 
 	c := serviceAccountCache{
-		saCache:                make(map[string]*CacheResponse),
-		cmCache:                make(map[string]*CacheResponse),
+		saCache:                make(map[string]*Entry),
+		cmCache:                make(map[string]*Entry),
 		defaultTokenExpiration: pkg.DefaultTokenExpiration,
 		annotationPrefix:       "eks.amazonaws.com",
 		webhookUsage:           prometheus.NewGauge(prometheus.GaugeOpts{}),
@@ -323,13 +425,13 @@ func TestCachePrecedence(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		role, _, _, exp := c.Get("mysa2", "myns2")
-		if role == "" {
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
+		if resp.RoleARN == "" {
 			t.Errorf("could not find entry that should have been added")
 		}
 		// We expect that the SA still holds presedence
-		if exp != int64(saTokenExpiration) {
-			t.Errorf("expected tokenExpiration %d, got %d", saTokenExpiration, exp)
+		if resp.TokenExpiration != int64(saTokenExpiration) {
+			t.Errorf("expected tokenExpiration %d, got %d", saTokenExpiration, resp.TokenExpiration)
 		}
 	}
 
@@ -340,14 +442,14 @@ func TestCachePrecedence(t *testing.T) {
 		}
 
 		// Removing sa2 from CM, but SA still exists
-		role, _, _, exp := c.Get("mysa2", "myns2")
-		if role == "" {
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
+		if resp.RoleARN == "" {
 			t.Errorf("could not find entry that should still exist")
 		}
 
 		// Note that Get returns default expiration if mapping is not found in the cache.
-		if exp != int64(saTokenExpiration) {
-			t.Errorf("expected tokenExpiration %d, got %d", saTokenExpiration, exp)
+		if resp.TokenExpiration != int64(saTokenExpiration) {
+			t.Errorf("expected tokenExpiration %d, got %d", saTokenExpiration, resp.TokenExpiration)
 		}
 	}
 
@@ -356,8 +458,8 @@ func TestCachePrecedence(t *testing.T) {
 		c.addSA(sa2)
 
 		// Neither cache should return any hits now
-		role, _, _, _ := c.Get("myns2", "mysa2")
-		if role != "" {
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
+		if resp.RoleARN != "" {
 			t.Errorf("found entry that should not exist")
 		}
 
@@ -370,13 +472,13 @@ func TestCachePrecedence(t *testing.T) {
 			t.Errorf("failed to build cache: %v", err)
 		}
 
-		role, _, _, exp := c.Get("mysa2", "myns2")
-		if role == "" {
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
+		if resp.RoleARN == "" {
 			t.Errorf("cloud not find entry that should have been added")
 		}
 
-		if exp != pkg.DefaultTokenExpiration {
-			t.Errorf("expected tokenExpiration %d, got %d", pkg.DefaultTokenExpiration, exp)
+		if resp.TokenExpiration != pkg.DefaultTokenExpiration {
+			t.Errorf("expected tokenExpiration %d, got %d", pkg.DefaultTokenExpiration, resp.TokenExpiration)
 		}
 	}
 
@@ -420,19 +522,19 @@ func TestRoleArnComposition(t *testing.T) {
 	cache.Start(stop)
 	defer close(stop)
 
-	var roleArn string
+	var resp Response
 	err := wait.ExponentialBackoff(wait.Backoff{Duration: 10 * time.Millisecond, Factor: 1.0, Steps: 3}, func() (bool, error) {
-		roleArn, _, _, _ = cache.Get("default", "default")
-		return roleArn != "", nil
+		resp = cache.Get(Request{Name: "default", Namespace: "default"})
+		return resp.RoleARN != "", nil
 	})
 	if err != nil {
 		t.Fatalf("cache never returned role arn %v", err)
 	}
 
-	arn, err := awsarn.Parse(roleArn)
+	arn, err := awsarn.Parse(resp.RoleARN)
 
 	assert.Nil(t, err, "Expected ARN parsing to succeed")
-	assert.True(t, awsarn.IsARN(roleArn), "Expected ARN validation to be true, got false")
+	assert.True(t, awsarn.IsARN(resp.RoleARN), "Expected ARN validation to be true, got false")
 	assert.Equal(t, accountID, arn.AccountID, "Expected account ID to be %s, got %s", accountID, arn.AccountID)
 	assert.Equal(t, resource, arn.Resource, "Expected resource to be %s, got %s", resource, arn.Resource)
 }
@@ -506,8 +608,8 @@ func TestGetCommonConfigurations(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			cache := &serviceAccountCache{
-				saCache:          map[string]*CacheResponse{},
-				cmCache:          map[string]*CacheResponse{},
+				saCache:          map[string]*Entry{},
+				cmCache:          map[string]*Entry{},
 				defaultAudience:  "sts.amazonaws.com",
 				annotationPrefix: "eks.amazonaws.com",
 				webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
