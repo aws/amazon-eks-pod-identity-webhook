@@ -80,6 +80,8 @@ certificates API.
         # optional: Defaults to 86400, or value specified in ServiceAccount
         #   annotation as shown in previous step, for expirationSeconds if not set
         eks.amazonaws.com/token-expiration: "86400"
+        # optional: Allow time for the SA cache to sync, in milliseconds. Defaults to 0 (disabled).
+        eks.amazonaws.com/service-account-lookup-grace-period: "250"
     spec:
       serviceAccountName: my-serviceaccount
       initContainers:
@@ -143,38 +145,38 @@ When running a container with a non-root user, you need to give the container ac
 
 ```
 Usage of amazon-eks-pod-identity-webhook:
-      --add_dir_header                       If true, adds the file directory to the header
-      --alsologtostderr                      log to standard error as well as files
-      --annotation-prefix string             The Service Account annotation to look for (default "eks.amazonaws.com")
-      --aws-default-region string            If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers
-      --enable-debugging-handlers            Enable debugging handlers. Currently /debug/alpha/cache is supported
-      --in-cluster                           Use in-cluster authentication and certificate request API (default true)
-      --kube-api string                      (out-of-cluster) The url to the API server
-      --kubeconfig string                    (out-of-cluster) Absolute path to the API server kubeconfig file
-      --log_backtrace_at traceLocation       when logging hits line file:N, emit a stack trace (default :0)
-      --log_dir string                       If non-empty, write log files in this directory
-      --log_file string                      If non-empty, use this log file
-      --log_file_max_size uint               Defines the maximum size a log file can grow to. Unit is megabytes. If the value is 0, the maximum file size is unlimited. (default 1800)
-      --logtostderr                          log to standard error instead of files (default true)
-      --metrics-port int                     Port to listen on for metrics (http) (default 9999)
-      --namespace string                     (in-cluster) The namespace name this webhook, the TLS secret, and configmap resides in (default "eks")
-      --port int                             Port to listen on (default 443)
-      --service-name string                  (in-cluster) The service name fronting this webhook (default "pod-identity-webhook")
-      --service-account-lookup-grace-period  The grace period for service account to be available in cache before not mutating a pod. Set to 0 to deactivate waiting. Carefully use higher values as it may have significant impact on Kubernetes' pod scheduling performance. (default 100ms)
-      --skip_headers                         If true, avoid header prefixes in the log messages
-      --skip_log_headers                     If true, avoid headers when opening log files
-      --stderrthreshold severity             logs at or above this threshold go to stderr (default 2)
-      --sts-regional-endpoint false          Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to false.
-      --tls-cert string                      (out-of-cluster) TLS certificate file path (default "/etc/webhook/certs/tls.crt")
-      --tls-key string                       (out-of-cluster) TLS key file path (default "/etc/webhook/certs/tls.key")
-      --tls-secret string                    (in-cluster) The secret name for storing the TLS serving cert (default "pod-identity-webhook")
-      --token-audience string                The default audience for tokens. Can be overridden by annotation (default "sts.amazonaws.com")
-      --token-expiration int                 The token expiration (default 86400)
-      --token-mount-path string              The path to mount tokens (default "/var/run/secrets/eks.amazonaws.com/serviceaccount")
-  -v, --v Level                              number for the log level verbosity
-      --version                              Display the version and exit
-      --vmodule moduleSpec                   comma-separated list of pattern=N settings for file-filtered logging
-      --watch-config-map                     Enables watching serviceaccounts that are configured through the pod-identity-webhook configmap instead of using annotations
+      --add_dir_header                           If true, adds the file directory to the header
+      --alsologtostderr                          log to standard error as well as files
+      --annotation-prefix string                 The Service Account annotation to look for (default "eks.amazonaws.com")
+      --aws-default-region string                If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers
+      --enable-debugging-handlers                Enable debugging handlers. Currently /debug/alpha/cache is supported
+      --in-cluster                               Use in-cluster authentication and certificate request API (default true)
+      --kube-api string                          (out-of-cluster) The url to the API server
+      --kubeconfig string                        (out-of-cluster) Absolute path to the API server kubeconfig file
+      --log_backtrace_at traceLocation           when logging hits line file:N, emit a stack trace (default :0)
+      --log_dir string                           If non-empty, write log files in this directory
+      --log_file string                          If non-empty, use this log file
+      --log_file_max_size uint                   Defines the maximum size a log file can grow to. Unit is megabytes. If the value is 0, the maximum file size is unlimited. (default 1800)
+      --logtostderr                              log to standard error instead of files (default true)
+      --metrics-port int                         Port to listen on for metrics (http) (default 9999)
+      --namespace string                         (in-cluster) The namespace name this webhook, the TLS secret, and configmap resides in (default "eks")
+      --port int                                 Port to listen on (default 443)
+      --service-account-lookup-grace-period int  The grace period, in milliseconds, for service account to be available in cache before not mutating a pod. Set to 0 to deactivate waiting. Carefully use higher values as it may have significant impact on Kubernetes' pod scheduling performance. (default 0)
+      --service-name string                      (in-cluster) The service name fronting this webhook (default "pod-identity-webhook")
+      --skip_headers                             If true, avoid header prefixes in the log messages
+      --skip_log_headers                         If true, avoid headers when opening log files
+      --stderrthreshold severity                 logs at or above this threshold go to stderr (default 2)
+      --sts-regional-endpoint false              Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to false.
+      --tls-cert string                          (out-of-cluster) TLS certificate file path (default "/etc/webhook/certs/tls.crt")
+      --tls-key string                           (out-of-cluster) TLS key file path (default "/etc/webhook/certs/tls.key")
+      --tls-secret string                        (in-cluster) The secret name for storing the TLS serving cert (default "pod-identity-webhook")
+      --token-audience string                    The default audience for tokens. Can be overridden by annotation (default "sts.amazonaws.com")
+      --token-expiration int                     The token expiration, in seconds (default 86400)
+      --token-mount-path string                  The path to mount tokens (default "/var/run/secrets/eks.amazonaws.com/serviceaccount")
+  -v, --v Level                                  number for the log level verbosity
+      --version                                  Display the version and exit
+      --vmodule moduleSpec                       comma-separated list of pattern=N settings for file-filtered logging
+      --watch-config-map                         Enables watching serviceaccounts that are configured through the pod-identity-webhook configmap instead of using annotations
 ```
 
 ### AWS_DEFAULT_REGION Injection

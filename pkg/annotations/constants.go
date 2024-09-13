@@ -26,4 +26,10 @@ const (
 
 	// A comma-separated list of container names to skip adding environment variables and volumes to. Applies to `initContainers` and `containers`
 	SkipContainersAnnotation = "skip-containers"
+
+	// The grace period, in milliseconds, for service account to be available in
+	// cache before not mutating a pod. Set to 0 to deactivate waiting.
+	// Carefully use higher values as it may have significant impact on
+	// Kubernetes' pod scheduling performance. (default 0)
+	SALookupGracePeriod = "service-account-lookup-grace-period"
 )

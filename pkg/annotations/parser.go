@@ -19,6 +19,7 @@ import (
 	"encoding/csv"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	corev1 "k8s.io/api/core/v1"
@@ -26,8 +27,9 @@ import (
 )
 
 type PodAnnotations struct {
-	tokenExpiration  *int64
-	containersToSkip map[string]bool
+	tokenExpiration     *int64
+	containersToSkip    map[string]bool
+	saLookupGracePeriod *time.Duration
 }
 
 func (a *PodAnnotations) GetContainersToSkip() map[string]bool {
@@ -42,6 +44,14 @@ func (a *PodAnnotations) GetTokenExpiration(fallback int64) int64 {
 	}
 }
 
+func (a *PodAnnotations) GetSALookupGracePeriod(fallback time.Duration) time.Duration {
+	if a.saLookupGracePeriod == nil {
+		return fallback
+	} else {
+		return *a.saLookupGracePeriod
+	}
+}
+
 // parsePodAnnotations parses the pod annotations that can influence mutation:
 // - tokenExpiration. Overrides the given service account annotation/flag-level
 // setting.
@@ -49,8 +59,9 @@ func (a *PodAnnotations) GetTokenExpiration(fallback int64) int64 {
 // specific pod might need to be opted-out of mutation
 func ParsePodAnnotations(pod *corev1.Pod, annotationDomain string) *PodAnnotations {
 	return &PodAnnotations{
-		tokenExpiration:  parseTokenExpiration(annotationDomain, pod),
-		containersToSkip: parseContainersToSkip(annotationDomain, pod),
+		tokenExpiration:     parseTokenExpiration(annotationDomain, pod),
+		containersToSkip:    parseContainersToSkip(annotationDomain, pod),
+		saLookupGracePeriod: parseSALookupGracePeriod(annotationDomain, pod),
 	}
 }
 
@@ -90,5 +101,23 @@ func parseTokenExpiration(annotationDomain string, pod *corev1.Pod) *int64 {
 	}
 
 	val := pkg.ValidateMinTokenExpiration(expiration)
+	return &val
+}
+
+func parseSALookupGracePeriod(annotationDomain string, pod *corev1.Pod) *time.Duration {
+	gracePeriodKey := annotationDomain + "/" + SALookupGracePeriod
+
+	gracePeriodStr, ok := pod.Annotations[gracePeriodKey]
+	if !ok {
+		return nil
+	}
+
+	gracePeriod, err := strconv.ParseInt(gracePeriodStr, 10, 64)
+	if err != nil {
+		klog.V(4).Infof("Found invalid value for SA lookup grace period on the pod annotation: %s, falling back to the default: %v", gracePeriodStr, err)
+		return nil
+	}
+
+	val := time.Duration(gracePeriod) * time.Millisecond
 	return &val
 }

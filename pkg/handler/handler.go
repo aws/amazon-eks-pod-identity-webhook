@@ -393,8 +393,9 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	// Use the STS WebIdentity method if set
 	request := cache.Request{Namespace: pod.Namespace, Name: pod.Spec.ServiceAccountName, RequestNotification: true}
 	response := m.Cache.Get(request)
-	if !response.FoundInCache && m.saLookupGraceTime > 0 {
-		klog.Warningf("Service account %s not found in the cache. Waiting up to %s to be notified", request.CacheKey(), m.saLookupGraceTime)
+	gracePeriod := podAnnotations.GetSALookupGracePeriod(m.saLookupGraceTime)
+	if !response.FoundInCache && gracePeriod > 0 {
+		klog.Warningf("Service account %s not found in the cache. Waiting up to %s to be notified", request.CacheKey(), gracePeriod)
 		select {
 		case <-response.Notifier:
 			request = cache.Request{Namespace: pod.Namespace, Name: pod.Spec.ServiceAccountName, RequestNotification: false}
@@ -403,8 +404,8 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 				klog.Warningf("Service account %s not found in the cache after being notified. Not mutating.", request.CacheKey())
 				return nil
 			}
-		case <-time.After(m.saLookupGraceTime):
-			klog.Warningf("Service account %s not found in the cache after %s. Not mutating.", request.CacheKey(), m.saLookupGraceTime)
+		case <-time.After(gracePeriod):
+			klog.Warningf("Service account %s not found in the cache after %s. Not mutating.", request.CacheKey(), gracePeriod)
 			return nil
 		}
 	}

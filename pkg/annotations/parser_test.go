@@ -17,6 +17,7 @@ package annotations
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +38,9 @@ func TestParsePodAnnotations(t *testing.T) {
 
 		fallbackExpiration int64
 		expectedExpiration int64
+
+		fallbackSALookupGracePeriod time.Duration
+		expectedSALookupGracePeriod time.Duration
 	}{
 		{
 			name: "sidecar-containers",
@@ -82,6 +86,38 @@ func TestParsePodAnnotations(t *testing.T) {
 			fallbackExpiration: 4567,
 			expectedExpiration: 600,
 		},
+		{
+			name: "service-account-lookup-grace-period",
+			pod: `
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: balajilovesoreos
+                annotations:
+                  testing.eks.amazonaws.com/service-account-lookup-grace-period: "250"
+            `,
+			fallbackSALookupGracePeriod: time.Duration(0),
+			expectedSALookupGracePeriod: time.Duration(250 * time.Millisecond),
+		},
+		{
+			name:                        "service-account-lookup-grace-period fallback",
+			pod:                         podNoAnnotations,
+			fallbackSALookupGracePeriod: time.Duration(100 * time.Millisecond),
+			expectedSALookupGracePeriod: time.Duration(100 * time.Millisecond),
+		},
+		{
+			name: "service-account-lookup-grace-period override with 0 to disable",
+			pod: `
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: balajilovesoreos
+                annotations:
+                  testing.eks.amazonaws.com/service-account-lookup-grace-period: "0"
+            `,
+			fallbackSALookupGracePeriod: time.Duration(250 * time.Millisecond),
+			expectedSALookupGracePeriod: time.Duration(0),
+		},
 	}
 
 	for _, tc := range testcases {
@@ -94,6 +130,7 @@ func TestParsePodAnnotations(t *testing.T) {
 			actual := ParsePodAnnotations(pod, "testing.eks.amazonaws.com")
 			assert.Equal(t, tc.expectedContainersToSkip, actual.GetContainersToSkip())
 			assert.Equal(t, tc.expectedExpiration, actual.GetTokenExpiration(tc.fallbackExpiration))
+			assert.Equal(t, tc.expectedSALookupGracePeriod, actual.GetSALookupGracePeriod(tc.fallbackSALookupGracePeriod))
 		})
 	}
 }
