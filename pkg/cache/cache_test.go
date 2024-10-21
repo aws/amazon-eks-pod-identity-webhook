@@ -35,6 +35,7 @@ func TestSaCache(t *testing.T) {
 		defaultAudience:  "sts.amazonaws.com",
 		annotationPrefix: "eks.amazonaws.com",
 		webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
+		notifications:    newNotifications(make(chan *Request, 10)),
 	}
 
 	resp := cache.Get(Request{Name: "default", Namespace: "default"})
@@ -69,9 +70,9 @@ func TestNotification(t *testing.T) {
 
 	t.Run("with one notification handler", func(t *testing.T) {
 		cache := &serviceAccountCache{
-			saCache:              map[string]*Entry{},
-			notificationHandlers: map[string]chan struct{}{},
-			webhookUsage:         prometheus.NewGauge(prometheus.GaugeOpts{}),
+			saCache:       map[string]*Entry{},
+			webhookUsage:  prometheus.NewGauge(prometheus.GaugeOpts{}),
+			notifications: newNotifications(make(chan *Request, 10)),
 		}
 
 		// test that the requested SA is not in the cache
@@ -106,9 +107,9 @@ func TestNotification(t *testing.T) {
 
 	t.Run("with 10 notification handlers", func(t *testing.T) {
 		cache := &serviceAccountCache{
-			saCache:              map[string]*Entry{},
-			notificationHandlers: map[string]chan struct{}{},
-			webhookUsage:         prometheus.NewGauge(prometheus.GaugeOpts{}),
+			saCache:       map[string]*Entry{},
+			webhookUsage:  prometheus.NewGauge(prometheus.GaugeOpts{}),
+			notifications: newNotifications(make(chan *Request, 5)),
 		}
 
 		// test that the requested SA is not in the cache
@@ -151,6 +152,63 @@ func TestNotification(t *testing.T) {
 
 		wg.Wait()
 	})
+}
+
+func TestFetchFromAPIServer(t *testing.T) {
+	testSA := &v1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"eks.amazonaws.com/role-arn":         "arn:aws:iam::111122223333:role/s3-reader",
+				"eks.amazonaws.com/token-expiration": "3600",
+			},
+		},
+	}
+	fakeSAClient := fake.NewSimpleClientset(testSA)
+
+	// use an empty informer to simulate the need to fetch SA from api server:
+	fakeEmptyClient := fake.NewSimpleClientset()
+	emptyInformerFactory := informers.NewSharedInformerFactory(fakeEmptyClient, 0)
+	emptyInformer := emptyInformerFactory.Core().V1().ServiceAccounts()
+
+	cache := New(
+		"sts.amazonaws.com",
+		"eks.amazonaws.com",
+		true,
+		86400,
+		emptyInformer,
+		nil,
+		ComposeRoleArn{},
+		fakeSAClient.CoreV1(),
+	)
+
+	stop := make(chan struct{})
+	emptyInformerFactory.Start(stop)
+	emptyInformerFactory.WaitForCacheSync(stop)
+	cache.Start(stop)
+	defer close(stop)
+
+	err := wait.ExponentialBackoff(wait.Backoff{Duration: 10 * time.Millisecond, Factor: 1.0, Steps: 3}, func() (bool, error) {
+		return len(fakeEmptyClient.Actions()) != 0, nil
+	})
+	if err != nil {
+		t.Fatalf("informer never called client: %v", err)
+	}
+
+	resp := cache.Get(Request{Name: "default", Namespace: "default", RequestNotification: true})
+	assert.False(t, resp.FoundInCache, "Expected cache entry to not be found")
+
+	// wait for the notification while we fetch the SA from the API server:
+	select {
+	case <-resp.Notifier:
+		// expected
+		// test that the requested SA is now in the cache
+		resp := cache.Get(Request{Name: "default", Namespace: "default", RequestNotification: false})
+		assert.True(t, resp.FoundInCache, "Expected cache entry to be found in cache")
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for notification")
+	}
 }
 
 func TestNonRegionalSTS(t *testing.T) {
@@ -237,7 +295,16 @@ func TestNonRegionalSTS(t *testing.T) {
 
 			testComposeRoleArn := ComposeRoleArn{}
 
-			cache := New(audience, "eks.amazonaws.com", tc.defaultRegionalSTS, 86400, informer, nil, testComposeRoleArn)
+			cache := New(
+				audience,
+				"eks.amazonaws.com",
+				tc.defaultRegionalSTS,
+				86400,
+				informer,
+				nil,
+				testComposeRoleArn,
+				fakeClient.CoreV1(),
+			)
 			stop := make(chan struct{})
 			informerFactory.Start(stop)
 			informerFactory.WaitForCacheSync(stop)
@@ -295,7 +362,8 @@ func TestPopulateCacheFromCM(t *testing.T) {
 	}
 
 	c := serviceAccountCache{
-		cmCache: make(map[string]*Entry),
+		cmCache:       make(map[string]*Entry),
+		notifications: newNotifications(make(chan *Request, 10)),
 	}
 
 	{
@@ -353,6 +421,7 @@ func TestSAAnnotationRemoval(t *testing.T) {
 		saCache:          make(map[string]*Entry),
 		annotationPrefix: "eks.amazonaws.com",
 		webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
+		notifications:    newNotifications(make(chan *Request, 10)),
 	}
 
 	c.addSA(oldSA)
@@ -416,6 +485,7 @@ func TestCachePrecedence(t *testing.T) {
 		defaultTokenExpiration: pkg.DefaultTokenExpiration,
 		annotationPrefix:       "eks.amazonaws.com",
 		webhookUsage:           prometheus.NewGauge(prometheus.GaugeOpts{}),
+		notifications:          newNotifications(make(chan *Request, 10)),
 	}
 
 	{
@@ -514,7 +584,15 @@ func TestRoleArnComposition(t *testing.T) {
 	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 	informer := informerFactory.Core().V1().ServiceAccounts()
 
-	cache := New(audience, "eks.amazonaws.com", true, 86400, informer, nil, testComposeRoleArn)
+	cache := New(audience,
+		"eks.amazonaws.com",
+		true,
+		86400,
+		informer,
+		nil,
+		testComposeRoleArn,
+		fakeClient.CoreV1(),
+	)
 	stop := make(chan struct{})
 	informerFactory.Start(stop)
 	informerFactory.WaitForCacheSync(stop)
@@ -613,6 +691,7 @@ func TestGetCommonConfigurations(t *testing.T) {
 				defaultAudience:  "sts.amazonaws.com",
 				annotationPrefix: "eks.amazonaws.com",
 				webhookUsage:     prometheus.NewGauge(prometheus.GaugeOpts{}),
+				notifications:    newNotifications(make(chan *Request, 10)),
 			}
 
 			if tc.serviceAccount != nil {
