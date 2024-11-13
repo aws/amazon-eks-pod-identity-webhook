@@ -88,6 +88,8 @@ func main() {
 
 	saLookupGracePeriod := flag.Duration("service-account-lookup-grace-period", 0, "The grace period for service account to be available in cache before not mutating a pod. Defaults to 0, what deactivates waiting. Carefully use values higher than a bunch of milliseconds as it may have significant impact on Kubernetes' pod scheduling performance.")
 
+	resyncPeriod := flag.Duration("resync-period", 60, "The period to resync the SA informer cache, in seconds.")
+
 	klog.InitFlags(goflag.CommandLine)
 	// Add klog CommandLine flags to pflag CommandLine
 	goflag.CommandLine.VisitAll(func(f *goflag.Flag) {
@@ -118,7 +120,7 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Error creating clientset: %v", err.Error())
 	}
-	informerFactory := informers.NewSharedInformerFactory(clientset, 60*time.Second)
+	informerFactory := informers.NewSharedInformerFactory(clientset, (*resyncPeriod)*time.Second)
 
 	var cmInformer v1.ConfigMapInformer
 	var nsInformerFactory informers.SharedInformerFactory
