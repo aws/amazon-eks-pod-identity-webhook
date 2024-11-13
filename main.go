@@ -88,7 +88,7 @@ func main() {
 
 	saLookupGracePeriod := flag.Duration("service-account-lookup-grace-period", 0, "The grace period for service account to be available in cache before not mutating a pod. Defaults to 0, what deactivates waiting. Carefully use values higher than a bunch of milliseconds as it may have significant impact on Kubernetes' pod scheduling performance.")
 
-	resyncPeriod := flag.Duration("resync-period", 60, "The period to resync the SA informer cache, in seconds.")
+	resyncPeriod := flag.Duration("resync-period", 60*time.Second, "The period to resync the SA informer cache, in seconds.")
 
 	klog.InitFlags(goflag.CommandLine)
 	// Add klog CommandLine flags to pflag CommandLine
@@ -120,13 +120,13 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Error creating clientset: %v", err.Error())
 	}
-	informerFactory := informers.NewSharedInformerFactory(clientset, (*resyncPeriod)*time.Second)
+	informerFactory := informers.NewSharedInformerFactory(clientset, *resyncPeriod)
 
 	var cmInformer v1.ConfigMapInformer
 	var nsInformerFactory informers.SharedInformerFactory
 	if *watchConfigMap {
 		klog.Infof("Watching ConfigMap pod-identity-webhook in %s namespace", *namespaceName)
-		nsInformerFactory = informers.NewSharedInformerFactoryWithOptions(clientset, 60*time.Second, informers.WithNamespace(*namespaceName))
+		nsInformerFactory = informers.NewSharedInformerFactoryWithOptions(clientset, *resyncPeriod, informers.WithNamespace(*namespaceName))
 		cmInformer = nsInformerFactory.Core().V1().ConfigMaps()
 	}
 
@@ -239,7 +239,18 @@ func main() {
 		}
 		// Reuse metrics port to avoid exposing a new port
 		metricsMux.HandleFunc("/debug/alpha/cache", debugger.Handle)
+		metricsMux.HandleFunc("/debug/alpha/cache/clear", debugger.Clear)
 		// Expose other debug paths
+		mux.Handle("/debug/alpha/deny", handler.Apply(
+			http.HandlerFunc(debugger.Deny),
+			handler.InstrumentRoute(),
+			handler.Logging(),
+		))
+		mux.Handle("/debug/alpha/500", handler.Apply(
+			http.HandlerFunc(debugger.InternalServerError),
+			handler.InstrumentRoute(),
+			handler.Logging(),
+		))
 	}
 
 	tlsConfig := &tls.Config{}
