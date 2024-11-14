@@ -98,3 +98,7 @@ func (f *FakeServiceAccountCache) ToJSON() string {
 	}
 	return string(contents)
 }
+
+func (f *FakeServiceAccountCache) Clear() {
+	f.cache = map[string]*Entry{}
+}

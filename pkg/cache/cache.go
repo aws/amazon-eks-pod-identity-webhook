@@ -65,6 +65,7 @@ type ServiceAccountCache interface {
 	GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64)
 	// ToJSON returns cache contents as JSON string
 	ToJSON() string
+	Clear()
 }
 
 type serviceAccountCache struct {
@@ -397,4 +398,9 @@ func (c *serviceAccountCache) start(stop chan struct{}) {
 
 func (c *serviceAccountCache) Start(stop chan struct{}) {
 	go c.start(stop)
+}
+
+func (c *serviceAccountCache) Clear() {
+	c.saCache = map[string]*Entry{}
+	c.cmCache = map[string]*Entry{}
 }
