@@ -56,6 +56,13 @@ var (
 			Help: "Indicator to how many pods are using sts web identity or container credentials",
 		}, []string{"method"},
 	)
+	missingSACounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "pod_identity_webhook_missing_sa_count",
+			Help: "Service account did not have the right annotations or was not found in the cache.",
+		},
+		[]string{},
+	)
 )
 
 func register() {
@@ -63,6 +70,7 @@ func register() {
 	prometheus.MustRegister(requestLatencies)
 	prometheus.MustRegister(requestLatenciesSummary)
 	prometheus.MustRegister(webhookPodCount)
+	prometheus.MustRegister(missingSACounter)
 }
 
 func monitor(verb, path string, httpCode int, reqStart time.Time) {
