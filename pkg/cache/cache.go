@@ -304,12 +304,14 @@ func New(defaultAudience,
 
 	go func() {
 		for req := range saFetchRequests {
-			sa, err := fetchFromAPI(SAGetter, req)
-			if err != nil {
-				klog.Errorf("fetching SA: %s, but got error from API: %v", req.CacheKey(), err)
-				continue
-			}
-			c.addSA(sa)
+			go func() {
+				sa, err := fetchFromAPI(SAGetter, req)
+				if err != nil {
+					klog.Errorf("fetching SA: %s, but got error from API: %v", req.CacheKey(), err)
+					return
+				}
+				c.addSA(sa)
+			}()
 		}
 	}()
 
@@ -367,22 +369,8 @@ func fetchFromAPI(getter corev1.ServiceAccountsGetter, req *Request) (*v1.Servic
 	defer cancel()
 
 	klog.V(5).Infof("fetching SA: %s", req.CacheKey())
-	saList, err := getter.ServiceAccounts(req.Namespace).List(
-		ctx,
-		metav1.ListOptions{},
-	)
-	if err != nil {
-		return nil, err
-	}
 
-	// Find the ServiceAccount
-	for _, sa := range saList.Items {
-		if sa.Name == req.Name {
-			return &sa, nil
-
-		}
-	}
-	return nil, fmt.Errorf("no SA found in namespace: %s", req.CacheKey())
+	return getter.ServiceAccounts(req.Namespace).Get(ctx, req.Name, metav1.GetOptions{})
 }
 
 func (c *serviceAccountCache) populateCacheFromCM(oldCM, newCM *v1.ConfigMap) error {
