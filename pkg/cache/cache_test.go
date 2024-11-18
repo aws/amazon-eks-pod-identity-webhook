@@ -157,7 +157,7 @@ func TestNotification(t *testing.T) {
 func TestFetchFromAPIServer(t *testing.T) {
 	testSA := &v1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default",
+			Name:      "my-sa",
 			Namespace: "default",
 			Annotations: map[string]string{
 				"eks.amazonaws.com/role-arn":         "arn:aws:iam::111122223333:role/s3-reader",
@@ -196,7 +196,7 @@ func TestFetchFromAPIServer(t *testing.T) {
 		t.Fatalf("informer never called client: %v", err)
 	}
 
-	resp := cache.Get(Request{Name: "default", Namespace: "default", RequestNotification: true})
+	resp := cache.Get(Request{Name: "my-sa", Namespace: "default", RequestNotification: true})
 	assert.False(t, resp.FoundInCache, "Expected cache entry to not be found")
 
 	// wait for the notification while we fetch the SA from the API server:
@@ -204,7 +204,7 @@ func TestFetchFromAPIServer(t *testing.T) {
 	case <-resp.Notifier:
 		// expected
 		// test that the requested SA is now in the cache
-		resp := cache.Get(Request{Name: "default", Namespace: "default", RequestNotification: false})
+		resp := cache.Get(Request{Name: "my-sa", Namespace: "default", RequestNotification: false})
 		assert.True(t, resp.FoundInCache, "Expected cache entry to be found in cache")
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for notification")
