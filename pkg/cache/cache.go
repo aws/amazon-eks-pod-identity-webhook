@@ -28,12 +28,14 @@ import (
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 )
 
@@ -373,7 +375,19 @@ func fetchFromAPI(getter corev1.ServiceAccountsGetter, req *Request) (*v1.Servic
 
 	klog.V(5).Infof("fetching SA: %s", req.CacheKey())
 
-	return getter.ServiceAccounts(req.Namespace).Get(ctx, req.Name, metav1.GetOptions{})
+	var sa *v1.ServiceAccount
+	err := retry.OnError(retry.DefaultBackoff, func(err error) bool {
+		return errors.IsServerTimeout(err)
+	}, func() error {
+		res, err := getter.ServiceAccounts(req.Namespace).Get(ctx, req.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		sa = res
+		return nil
+	})
+
+	return sa, err
 }
 
 func (c *serviceAccountCache) populateCacheFromCM(oldCM, newCM *v1.ConfigMap) error {
