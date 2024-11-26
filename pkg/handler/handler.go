@@ -433,9 +433,10 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	}
 
 	// Use the STS WebIdentity method if set
-	request := cache.Request{Namespace: pod.Namespace, Name: pod.Spec.ServiceAccountName, RequestNotification: true}
+	gracePeriodEnabled := m.saLookupGraceTime > 0
+	request := cache.Request{Namespace: pod.Namespace, Name: pod.Spec.ServiceAccountName, RequestNotification: gracePeriodEnabled}
 	response := m.Cache.Get(request)
-	if !response.FoundInCache && m.saLookupGraceTime > 0 {
+	if !response.FoundInCache && gracePeriodEnabled {
 		klog.Warningf("Service account %s not found in the cache. Waiting up to %s to be notified", request.CacheKey(), m.saLookupGraceTime)
 		select {
 		case <-response.Notifier:
