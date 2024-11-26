@@ -434,7 +434,7 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 
 	// Use the STS WebIdentity method if set
 	gracePeriodEnabled := m.saLookupGraceTime > 0
-	request := cache.Request{Namespace: pod.Namespace, Name: pod.Spec.ServiceAccountName, RequestNotification: true}
+	request := cache.Request{Namespace: pod.Namespace, Name: pod.Spec.ServiceAccountName, RequestNotification: gracePeriodEnabled}
 	response := m.Cache.Get(request)
 	if !response.FoundInCache && !gracePeriodEnabled {
 		missingSACounter.WithLabelValues().Inc()
