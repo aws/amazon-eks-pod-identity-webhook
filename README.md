@@ -64,7 +64,7 @@ certificates API.
         #         annotation as shown in the next step.
         eks.amazonaws.com/token-expiration: "86400"
     ```
-4. All new pod pods launched using this Service Account will be modified to use
+4. All new pods launched using this Service Account will be modified to use
    IAM for pods. Below is an example pod spec with the environment variables and
    volume fields added by the webhook.
     ```yaml
