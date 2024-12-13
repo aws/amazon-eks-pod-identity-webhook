@@ -1,8 +1,6 @@
 module github.com/aws/amazon-eks-pod-identity-webhook
 
-go 1.23.0
-
-toolchain go1.23.3
+go 1.23.4
 
 require (
 	github.com/aws/aws-sdk-go v1.44.259
@@ -12,9 +10,9 @@ require (
 	github.com/prometheus/client_golang v1.12.2
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
-	k8s.io/api v0.32.0-rc.2
-	k8s.io/apimachinery v0.32.0-rc.2
-	k8s.io/client-go v0.32.0-rc.2
+	k8s.io/api v0.32.0
+	k8s.io/apimachinery v0.32.0
+	k8s.io/client-go v0.32.0
 	k8s.io/klog/v2 v2.130.1
 	sigs.k8s.io/controller-runtime v0.13.0
 	sigs.k8s.io/yaml v1.4.0
