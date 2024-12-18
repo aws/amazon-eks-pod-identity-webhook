@@ -131,6 +131,9 @@ func (c *serviceAccountCache) Get(req Request) Response {
 	}
 	{
 		entry := c.getCM(req.Name, req.Namespace)
+		if entry == nil {
+			entry = c.getCM(req.Name, "*")
+		}
 		if entry != nil {
 			result.FoundInCache = true
 			result.RoleARN = entry.RoleARN
