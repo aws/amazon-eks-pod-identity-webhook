@@ -7,3 +7,12 @@ bin
 /certs/
 SAMToolkit.*
 coverage.out
+# Devenv
+.devenv*
+devenv.*
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml

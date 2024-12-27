@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/annotations"
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -213,7 +214,7 @@ func (c *serviceAccountCache) ToJSON() string {
 func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 	entry := &Entry{}
 
-	arn, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.RoleARNAnnotation]
+	arn, ok := sa.Annotations[c.annotationPrefix+"/"+annotations.RoleARNAnnotation]
 	if ok {
 		if !strings.Contains(arn, "arn:") && c.composeRoleArn.Enabled {
 			arn = fmt.Sprintf("arn:%s:iam::%s:role/%s", c.composeRoleArn.Partition, c.composeRoleArn.AccountID, arn)
@@ -229,12 +230,12 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 	}
 
 	entry.Audience = c.defaultAudience
-	if audience, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.AudienceAnnotation]; ok {
+	if audience, ok := sa.Annotations[c.annotationPrefix+"/"+annotations.AudienceAnnotation]; ok {
 		entry.Audience = audience
 	}
 
 	entry.UseRegionalSTS = c.defaultRegionalSTS
-	if useRegionalStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.UseRegionalSTSAnnotation]; ok {
+	if useRegionalStr, ok := sa.Annotations[c.annotationPrefix+"/"+annotations.UseRegionalSTSAnnotation]; ok {
 		useRegional, err := strconv.ParseBool(useRegionalStr)
 		if err != nil {
 			klog.V(4).Infof("Ignoring service account %s/%s invalid value for disable-regional-sts annotation", sa.Namespace, sa.Name)
@@ -244,7 +245,7 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 	}
 
 	entry.TokenExpiration = c.defaultTokenExpiration
-	if tokenExpirationStr, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.TokenExpirationAnnotation]; ok {
+	if tokenExpirationStr, ok := sa.Annotations[c.annotationPrefix+"/"+annotations.TokenExpirationAnnotation]; ok {
 		if tokenExpiration, err := strconv.ParseInt(tokenExpirationStr, 10, 64); err != nil {
 			klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", entry.TokenExpiration, err)
 		} else {
