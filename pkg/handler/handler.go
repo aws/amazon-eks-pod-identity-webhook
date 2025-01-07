@@ -433,9 +433,13 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	}
 
 	// Use the STS WebIdentity method if set
+	gracePeriodEnabled := m.saLookupGraceTime > 0
 	request := cache.Request{Namespace: pod.Namespace, Name: pod.Spec.ServiceAccountName, RequestNotification: true}
 	response := m.Cache.Get(request)
-	if !response.FoundInCache && m.saLookupGraceTime > 0 {
+	if !response.FoundInCache && !gracePeriodEnabled {
+		missingSACounter.WithLabelValues().Inc()
+	}
+	if !response.FoundInCache && gracePeriodEnabled {
 		klog.Warningf("Service account %s not found in the cache. Waiting up to %s to be notified", request.CacheKey(), m.saLookupGraceTime)
 		select {
 		case <-response.Notifier:
@@ -443,10 +447,12 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 			response = m.Cache.Get(request)
 			if !response.FoundInCache {
 				klog.Warningf("Service account %s not found in the cache after being notified. Not mutating.", request.CacheKey())
+				missingSACounter.WithLabelValues().Inc()
 				return nil
 			}
 		case <-time.After(m.saLookupGraceTime):
 			klog.Warningf("Service account %s not found in the cache after %s. Not mutating.", request.CacheKey(), m.saLookupGraceTime)
+			missingSACounter.WithLabelValues().Inc()
 			return nil
 		}
 	}
@@ -503,7 +509,6 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 
 	patchConfig := m.buildPodPatchConfig(&pod)
 	if patchConfig == nil {
-		missingSACounter.WithLabelValues().Inc()
 		klog.V(4).Infof("Pod was not mutated. Reason: "+
 			"Service account did not have the right annotations or was not found in the cache. %s", logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
 		return &v1beta1.AdmissionResponse{
