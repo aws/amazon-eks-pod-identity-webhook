@@ -336,6 +336,66 @@ func TestPopulateCacheFromCM(t *testing.T) {
 
 }
 
+func TestPopulateCacheFromCMWithWildcard(t *testing.T) {
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-identity-webhook",
+		},
+		Data: map[string]string{
+			"config": "{\"*/mysa\":{\"RoleARN\":\"arn:aws:iam::111122223333:role/s3-reader\"},\"*/mysa2\": {\"RoleARN\":\"arn:aws:iam::111122223333:role/s3-reader2\"}}",
+		},
+	}
+	cm2 := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-identity-webhook",
+		},
+		Data: map[string]string{
+			"config": "{\"*/mysa\":{\"RoleARN\":\"arn:aws:iam::111122223333:role/s3-reader\"}}",
+		},
+	}
+
+	c := serviceAccountCache{
+		cmCache: make(map[string]*Entry),
+	}
+
+	{
+		err := c.populateCacheFromCM(nil, cm)
+		if err != nil {
+			t.Errorf("failed to build cache: %v", err)
+		}
+
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
+		if resp.RoleARN == "" {
+			t.Errorf("cloud not find entry that should have been added")
+		}
+	}
+
+	{
+		err := c.populateCacheFromCM(cm, cm)
+		if err != nil {
+			t.Errorf("failed to build cache: %v", err)
+		}
+
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
+		if resp.RoleARN == "" {
+			t.Errorf("cloud not find entry that should have been added")
+		}
+	}
+
+	{
+		err := c.populateCacheFromCM(cm, cm2)
+		if err != nil {
+			t.Errorf("failed to build cache: %v", err)
+		}
+
+		resp := c.Get(Request{Name: "mysa2", Namespace: "myns2"})
+		if resp.RoleARN != "" {
+			t.Errorf("found entry that should have been removed")
+		}
+	}
+
+}
+
 func TestSAAnnotationRemoval(t *testing.T) {
 	roleArn := "arn:aws:iam::111122223333:role/s3-reader"
 	oldSA := &v1.ServiceAccount{
