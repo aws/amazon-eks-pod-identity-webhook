@@ -23,6 +23,7 @@ func (n *notifications) create(req Request) <-chan struct{} {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
+	// deduplicate requests to SA with same namespace/name to single request
 	notifier, found := n.handlers[req.CacheKey()]
 	if !found {
 		notifier = make(chan struct{})
