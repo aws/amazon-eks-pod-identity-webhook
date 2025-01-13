@@ -16,20 +16,27 @@
 package cache
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/time/rate"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 )
 
@@ -80,8 +87,7 @@ type serviceAccountCache struct {
 	composeRoleArn         ComposeRoleArn
 	defaultTokenExpiration int64
 	webhookUsage           prometheus.Gauge
-	notificationHandlers   map[string]chan struct{}
-	handlerMu              sync.Mutex
+	notifications          *notifications
 }
 
 type ComposeRoleArn struct {
@@ -159,20 +165,13 @@ func (c *serviceAccountCache) GetCommonConfigurations(name, namespace string) (u
 	return false, pkg.DefaultTokenExpiration
 }
 
-func (c *serviceAccountCache) getSA(req Request) (*Entry, chan struct{}) {
+func (c *serviceAccountCache) getSA(req Request) (*Entry, <-chan struct{}) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	entry, ok := c.saCache[req.CacheKey()]
 	if !ok && req.RequestNotification {
 		klog.V(5).Infof("Service Account %s not found in cache, adding notification handler", req.CacheKey())
-		c.handlerMu.Lock()
-		defer c.handlerMu.Unlock()
-		notifier, found := c.notificationHandlers[req.CacheKey()]
-		if !found {
-			notifier = make(chan struct{})
-			c.notificationHandlers[req.CacheKey()] = notifier
-		}
-		return nil, notifier
+		return nil, c.notifications.create(req)
 	}
 	return entry, nil
 }
@@ -267,13 +266,7 @@ func (c *serviceAccountCache) setSA(name, namespace string, entry *Entry) {
 	klog.V(5).Infof("Adding SA %q to SA cache: %+v", key, entry)
 	c.saCache[key] = entry
 
-	c.handlerMu.Lock()
-	defer c.handlerMu.Unlock()
-	if handler, found := c.notificationHandlers[key]; found {
-		klog.V(5).Infof("Notifying handlers for %q", key)
-		close(handler)
-		delete(c.notificationHandlers, key)
-	}
+	c.notifications.broadcast(key)
 }
 
 func (c *serviceAccountCache) setCM(name, namespace string, entry *Entry) {
@@ -283,7 +276,15 @@ func (c *serviceAccountCache) setCM(name, namespace string, entry *Entry) {
 	c.cmCache[namespace+"/"+name] = entry
 }
 
-func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenExpiration int64, saInformer coreinformers.ServiceAccountInformer, cmInformer coreinformers.ConfigMapInformer, composeRoleArn ComposeRoleArn) ServiceAccountCache {
+func New(defaultAudience,
+	prefix string,
+	defaultRegionalSTS bool,
+	defaultTokenExpiration int64,
+	saInformer coreinformers.ServiceAccountInformer,
+	cmInformer coreinformers.ConfigMapInformer,
+	composeRoleArn ComposeRoleArn,
+	SAGetter corev1.ServiceAccountsGetter,
+) ServiceAccountCache {
 	hasSynced := func() bool {
 		if cmInformer != nil {
 			return saInformer.Informer().HasSynced() && cmInformer.Informer().HasSynced()
@@ -292,6 +293,9 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 		}
 	}
 
+	// Allocate capacity large enough to not block writers (sync path in pod mutation).
+	// Rate limiting is done in the consumer side below.
+	saFetchRequests := make(chan *Request, 1000)
 	c := &serviceAccountCache{
 		saCache:                map[string]*Entry{},
 		cmCache:                map[string]*Entry{},
@@ -302,8 +306,29 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 		defaultTokenExpiration: defaultTokenExpiration,
 		hasSynced:              hasSynced,
 		webhookUsage:           webhookUsage,
-		notificationHandlers:   map[string]chan struct{}{},
+		notifications:          newNotifications(saFetchRequests),
 	}
+
+	// Rate limiting at 10 requests per second with burst to 20.
+	// In case the requests are queued in the channel for period longer than the service-account-lookup-grace-period,
+	// the pod will not be mutated if the service account is also not synced by informer cache before service-account-lookup-grace-period.
+	// This is to avoid adding unlimited latency to the pod mutation time. The maximum latency would be service-account-lookup-grace-period.
+	rl := rate.NewLimiter(rate.Every(100*time.Millisecond), 20)
+	go func() {
+		for req := range saFetchRequests {
+			go func() {
+				// Do rate limiting inside go routine, the goal is to consume the channel as fast as possible to
+				// avoid writer being blocked but still rate limit the requests sent to the API server.
+				_ = rl.Wait(context.Background())
+				sa, err := fetchFromAPI(SAGetter, req)
+				if err != nil {
+					klog.Errorf("fetching SA: %s, but got error from API: %v", req.CacheKey(), err)
+					return
+				}
+				c.addSA(sa)
+			}()
+		}
+	}()
 
 	saInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
@@ -352,6 +377,27 @@ func New(defaultAudience, prefix string, defaultRegionalSTS bool, defaultTokenEx
 		)
 	}
 	return c
+}
+
+func fetchFromAPI(getter corev1.ServiceAccountsGetter, req *Request) (*v1.ServiceAccount, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*1)
+	defer cancel()
+
+	klog.V(5).Infof("fetching SA: %s", req.CacheKey())
+
+	var sa *v1.ServiceAccount
+	err := retry.OnError(retry.DefaultBackoff, func(err error) bool {
+		return errors.IsServerTimeout(err)
+	}, func() error {
+		res, err := getter.ServiceAccounts(req.Namespace).Get(ctx, req.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		sa = res
+		return nil
+	})
+
+	return sa, err
 }
 
 func (c *serviceAccountCache) populateCacheFromCM(oldCM, newCM *v1.ConfigMap) error {
