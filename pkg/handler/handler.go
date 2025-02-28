@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -417,6 +418,14 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 		regionalSTS, tokenExpiration := m.Cache.GetCommonConfigurations(pod.Spec.ServiceAccountName, pod.Namespace)
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
 
+		if tokenExpiration == pkg.DefaultTokenExpiration {
+			klog.V(4).Infof("Adding jitter to default token expiration")
+			var err error
+			tokenExpiration, err = addJitter(tokenExpiration, 5, pkg.MinTokenExpiration, pkg.MaxTokenExpiration)
+			if err != nil {
+				klog.Errorf("Error adding jitter to default token expiration: %v", err)
+			}
+		}
 		webhookPodCount.WithLabelValues("container_credentials").Inc()
 
 		return &podPatchConfig{
@@ -477,6 +486,26 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 
 	// No mutations needed
 	return nil
+}
+
+func addJitter(val int64, jitterPercent int64, min int64, max int64) (int64, error) {
+	if max < min {
+		return val, error(fmt.Errorf("max value %d is less than min value %d, cannot add jitter", max, min))
+	}
+
+	jitterFactor := float64(jitterPercent) / 100.0
+	jitterMin := int64(float64(val) - (float64(val) * jitterFactor))
+	if jitterMin < min {
+		jitterMin = min
+	}
+	jitterMax := int64(float64(val) + (float64(val) * jitterFactor))
+	if jitterMax > max {
+		jitterMax = max
+	}
+
+	valWithJitter := rand.Int63n(jitterMax - jitterMin + 1) + jitterMin
+
+	return valWithJitter, nil
 }
 
 // MutatePod takes a AdmissionReview, mutates the pod, and returns an AdmissionResponse

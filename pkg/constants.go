@@ -15,9 +15,10 @@ permissions and limitations under the License.
 package pkg
 
 const (
-	// Default token expiration in seconds if none is defined,
-	// which is 24hrs as that is max for EKS
-	DefaultTokenExpiration = int64(86400)
+	// 24hrs as that is max for EKS
+	MaxTokenExpiration = int64(86400)
+	// Default token expiration in seconds if none is defined, 22hrs
+	DefaultTokenExpiration = int64(79200)
 	// 10mins is min for kube-apiserver
 	MinTokenExpiration = int64(600)
 

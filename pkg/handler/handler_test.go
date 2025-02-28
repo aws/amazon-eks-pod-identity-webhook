@@ -180,6 +180,24 @@ func serializeAdmissionReview(t *testing.T, want *v1beta1.AdmissionReview) []byt
 	return wantedBytes
 }
 
+func TestAddJitterMinMax(t *testing.T) {
+	var (
+		min int64
+		max int64
+	)
+	min, max = 8, 11
+	for i := 0; i < 10; i++ {
+		jitter, err := addJitter(10, 1000, min, max)
+		assert.True(t, jitter >= min && jitter <= max)
+		assert.True(t, err == nil)
+	}
+}
+
+func TestAddJitterMinGTMax(t *testing.T) {
+	_, err := addJitter(10, 1000, 11, 8)
+	assert.True(t, err != nil)
+}
+
 func TestModifierHandler(t *testing.T) {
 	testServiceAccount := &corev1.ServiceAccount{}
 	testServiceAccount.Name = "default"
