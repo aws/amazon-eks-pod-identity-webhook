@@ -16,16 +16,15 @@
 package handler
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/annotations"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
@@ -143,25 +142,6 @@ func logContext(podName, podGenerateName, serviceAccountName, namespace string) 
 		"Namespace=%s", name, serviceAccountName, namespace)
 }
 
-// getContainersToSkip returns the containers of a pod to skip mutating
-func getContainersToSkip(annotationDomain string, pod *corev1.Pod) map[string]bool {
-	skippedNames := map[string]bool{}
-	skipContainersKey := annotationDomain + "/" + pkg.SkipContainersAnnotation
-	if value, ok := pod.Annotations[skipContainersKey]; ok {
-		r := csv.NewReader(strings.NewReader(value))
-		// error means we don't skip any
-		podNames, err := r.Read()
-		if err != nil {
-			klog.Infof("Could not parse skip containers annotation on pod %s/%s: %v", pod.Namespace, pod.Name, err)
-			return skippedNames
-		}
-		for _, name := range podNames {
-			skippedNames[name] = true
-		}
-	}
-	return skippedNames
-}
-
 func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath string, patchConfig *podPatchConfig) bool {
 	var (
 		webIdentityKeysDefined          bool
@@ -277,29 +257,6 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath 
 	return changed
 }
 
-// parsePodAnnotations parses the pod annotations that can influence mutation:
-// - tokenExpiration. Overrides the given service account annotation/flag-level
-// setting.
-// - containersToSkip. A Pod specific setting since certain containers within a
-// specific pod might need to be opted-out of mutation
-func (m *Modifier) parsePodAnnotations(pod *corev1.Pod, serviceAccountTokenExpiration int64) (int64, map[string]bool) {
-	// override serviceaccount annotation/flag token expiration with pod
-	// annotation if present
-	tokenExpiration := serviceAccountTokenExpiration
-	expirationKey := m.AnnotationDomain + "/" + pkg.TokenExpirationAnnotation
-	if expirationStr, ok := pod.Annotations[expirationKey]; ok {
-		if expiration, err := strconv.ParseInt(expirationStr, 10, 64); err != nil {
-			klog.V(4).Infof("Found invalid value for token expiration, using %d seconds as default: %v", serviceAccountTokenExpiration, err)
-		} else {
-			tokenExpiration = pkg.ValidateMinTokenExpiration(expiration)
-		}
-	}
-
-	containersToSkip := getContainersToSkip(m.AnnotationDomain, pod)
-
-	return tokenExpiration, containersToSkip
-}
-
 // getPodSpecPatch gets the patch operation to be applied to the given Pod
 func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig) ([]patchOperation, bool) {
 	tokenFilePath := filepath.Join(patchConfig.MountPath, patchConfig.TokenPath)
@@ -413,15 +370,16 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	// Container credentials method takes precedence
 	containerCredentialsPatchConfig := m.ContainerCredentialsConfig.Get(pod.Namespace, pod.Spec.ServiceAccountName)
+
+	podAnnotations := annotations.ParsePodAnnotations(pod, m.AnnotationDomain)
 	if containerCredentialsPatchConfig != nil {
-		regionalSTS, tokenExpiration := m.Cache.GetCommonConfigurations(pod.Spec.ServiceAccountName, pod.Namespace)
-		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
+		regionalSTS, tokenExpirationFallback := m.Cache.GetCommonConfigurations(pod.Spec.ServiceAccountName, pod.Namespace)
 
 		webhookPodCount.WithLabelValues("container_credentials").Inc()
 
 		return &podPatchConfig{
-			ContainersToSkip:                containersToSkip,
-			TokenExpiration:                 tokenExpiration,
+			ContainersToSkip:                podAnnotations.GetContainersToSkip(),
+			TokenExpiration:                 podAnnotations.GetTokenExpiration(tokenExpirationFallback),
 			UseRegionalSTS:                  regionalSTS,
 			Audience:                        containerCredentialsPatchConfig.Audience,
 			MountPath:                       containerCredentialsPatchConfig.MountPath,
@@ -458,13 +416,12 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	}
 	klog.V(5).Infof("Value of roleArn after after cache retrieval for service account %s: %s", request.CacheKey(), response.RoleARN)
 	if response.RoleARN != "" {
-		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, response.TokenExpiration)
 
 		webhookPodCount.WithLabelValues("sts_web_identity").Inc()
 
 		return &podPatchConfig{
-			ContainersToSkip:                containersToSkip,
-			TokenExpiration:                 tokenExpiration,
+			ContainersToSkip:                podAnnotations.GetContainersToSkip(),
+			TokenExpiration:                 podAnnotations.GetTokenExpiration(response.TokenExpiration),
 			UseRegionalSTS:                  response.UseRegionalSTS,
 			Audience:                        response.Audience,
 			MountPath:                       m.MountPath,

@@ -19,13 +19,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
@@ -140,42 +141,42 @@ func TestUpdatePodSpec(t *testing.T) {
 		if info.IsDir() {
 			return nil
 		}
-		if strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml") {
-			pod, err := parseFile(filepath.Join("./", path))
-			if err != nil {
-				t.Errorf("Error while parsing file %s: %v", info.Name(), err)
-				return err
-			}
-			if skipStr, ok := pod.Annotations[skipAnnotation]; ok {
-				skip, _ := strconv.ParseBool(skipStr)
-				if skip {
-					return nil
-				}
-			}
-
-			pod.Namespace = "default"
-			pod.Spec.ServiceAccountName = "default"
-
-			t.Run(fmt.Sprintf("Pod %s in file %s", pod.Name, path), func(t *testing.T) {
-				modifier := buildModifierFromPod(pod)
-				patchConfig := modifier.buildPodPatchConfig(pod)
-				patch, _ := modifier.getPodSpecPatch(pod, patchConfig)
-				patchBytes, err := json.Marshal(patch)
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
-				expectedPatchStr, ok := pod.Annotations[expectedPatchAnnotation]
-				if !ok && (len(patchBytes) == 0 || patchBytes == nil) {
-					return
-				}
-
-				if bytes.Compare(patchBytes, []byte(expectedPatchStr)) != 0 {
-					t.Errorf("Expected patch didn't match: \nGot\n\t%v\nWanted:\n\t%v\n", string(patchBytes), expectedPatchStr)
-				}
-
-			})
+		if !strings.HasSuffix(info.Name(), ".yaml") && !strings.HasSuffix(info.Name(), ".yml") {
 			return nil
 		}
+		pod, err := parseFile(filepath.Join("./", path))
+		if err != nil {
+			t.Errorf("Error while parsing file %s: %v", info.Name(), err)
+			return err
+		}
+		if skipStr, ok := pod.Annotations[skipAnnotation]; ok {
+			skip, _ := strconv.ParseBool(skipStr)
+			if skip {
+				return nil
+			}
+		}
+
+		pod.Namespace = "default"
+		pod.Spec.ServiceAccountName = "default"
+
+		t.Run(fmt.Sprintf("Pod %s in file %s", pod.Name, path), func(t *testing.T) {
+			modifier := buildModifierFromPod(pod)
+			patchConfig := modifier.buildPodPatchConfig(pod)
+			patch, _ := modifier.getPodSpecPatch(pod, patchConfig)
+			patchBytes, err := json.Marshal(patch)
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+			expectedPatchStr, ok := pod.Annotations[expectedPatchAnnotation]
+			if !ok && (len(patchBytes) == 0 || patchBytes == nil) {
+				return
+			}
+
+			if bytes.Compare(patchBytes, []byte(expectedPatchStr)) != 0 {
+				t.Errorf("Expected patch didn't match: \nGot\n\t%v\nWanted:\n\t%v\n", string(patchBytes), expectedPatchStr)
+			}
+
+		})
 		return nil
 	})
 	if err != nil {
