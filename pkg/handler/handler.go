@@ -86,12 +86,17 @@ func WithSALookupGraceTime(saLookupGraceTime time.Duration) ModifierOpt {
 }
 
 // NewModifier returns a Modifier with default values
-func NewModifier(opts ...ModifierOpt) *Modifier {
+func NewModifier(random *rand.Rand, opts ...ModifierOpt) *Modifier {
+	if random == nil {
+		random = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+
 	mod := &Modifier{
 		AnnotationDomain: "eks.amazonaws.com",
 		MountPath:        "/var/run/secrets/eks.amazonaws.com/serviceaccount",
 		volName:          "aws-iam-token",
 		tokenName:        "token",
+		rand:             *random,
 	}
 	for _, opt := range opts {
 		opt(mod)
@@ -110,6 +115,7 @@ type Modifier struct {
 	volName                    string
 	tokenName                  string
 	saLookupGraceTime          time.Duration
+	rand                       rand.Rand
 }
 
 type patchOperation struct {
@@ -418,14 +424,7 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 		regionalSTS, tokenExpiration := m.Cache.GetCommonConfigurations(pod.Spec.ServiceAccountName, pod.Namespace)
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
 
-		if tokenExpiration == pkg.DefaultTokenExpiration {
-			klog.V(4).Infof("Adding jitter to default token expiration")
-			var err error
-			tokenExpiration, err = addJitter(tokenExpiration, 5, pkg.MinTokenExpiration, pkg.MaxTokenExpiration)
-			if err != nil {
-				klog.Errorf("Error adding jitter to default token expiration: %v", err)
-			}
-		}
+		tokenExpiration = m.addJitterToDefaultToken(tokenExpiration)
 		webhookPodCount.WithLabelValues("container_credentials").Inc()
 
 		return &podPatchConfig{
@@ -468,6 +467,7 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	klog.V(5).Infof("Value of roleArn after after cache retrieval for service account %s: %s", request.CacheKey(), response.RoleARN)
 	if response.RoleARN != "" {
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, response.TokenExpiration)
+		tokenExpiration = m.addJitterToDefaultToken(tokenExpiration)
 
 		webhookPodCount.WithLabelValues("sts_web_identity").Inc()
 
@@ -488,24 +488,13 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	return nil
 }
 
-func addJitter(val int64, jitterPercent int64, min int64, max int64) (int64, error) {
-	if max < min {
-		return val, error(fmt.Errorf("max value %d is less than min value %d, cannot add jitter", max, min))
+func (m *Modifier) addJitterToDefaultToken(tokenExpiration int64) int64 {
+	if tokenExpiration == pkg.DefaultTokenExpiration {
+		klog.V(0).Infof("Adding jitter to default token expiration")
+		tokenExpiration = m.rand.Int63n(pkg.DefaultTokenExpiration-pkg.DefaultMinTokenExpiration+int64(1)) + pkg.DefaultMinTokenExpiration
 	}
 
-	jitterFactor := float64(jitterPercent) / 100.0
-	jitterMin := int64(float64(val) - (float64(val) * jitterFactor))
-	if jitterMin < min {
-		jitterMin = min
-	}
-	jitterMax := int64(float64(val) + (float64(val) * jitterFactor))
-	if jitterMax > max {
-		jitterMax = max
-	}
-
-	valWithJitter := rand.Int63n(jitterMax - jitterMin + 1) + jitterMin
-
-	return valWithJitter, nil
+	return tokenExpiration
 }
 
 // MutatePod takes a AdmissionReview, mutates the pod, and returns an AdmissionResponse

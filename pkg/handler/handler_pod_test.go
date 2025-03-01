@@ -62,7 +62,7 @@ const (
 // buildModifierFromPod gets values to set up test case environments with as if
 // the values were set by service account annotation/flag before the test case.
 // Test cases are defined entirely by pod yamls.
-func buildModifierFromPod(pod *corev1.Pod) *Modifier {
+func buildModifierFromPod(pod *corev1.Pod, t *testing.T) *Modifier {
 	var modifierOpts []ModifierOpt
 
 	if path, ok := pod.Annotations[handlerMountPathAnnotation]; ok {
@@ -76,7 +76,7 @@ func buildModifierFromPod(pod *corev1.Pod) *Modifier {
 	modifierOpts = append(modifierOpts, WithServiceAccountCache(buildFakeCacheFromPod(pod)))
 	modifierOpts = append(modifierOpts, WithContainerCredentialsConfig(buildFakeConfigFromPod(pod)))
 
-	return NewModifier(modifierOpts...)
+	return NewModifier(getAlwaysZeroRand(t), modifierOpts...)
 }
 
 func buildFakeCacheFromPod(pod *corev1.Pod) *cache.FakeServiceAccountCache {
@@ -157,7 +157,7 @@ func TestUpdatePodSpec(t *testing.T) {
 			pod.Spec.ServiceAccountName = "default"
 
 			t.Run(fmt.Sprintf("Pod %s in file %s", pod.Name, path), func(t *testing.T) {
-				modifier := buildModifierFromPod(pod)
+				modifier := buildModifierFromPod(pod, t)
 				patchConfig := modifier.buildPodPatchConfig(pod)
 				patch, _ := modifier.getPodSpecPatch(pod, patchConfig)
 				patchBytes, err := json.Marshal(patch)

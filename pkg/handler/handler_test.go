@@ -19,10 +19,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
+	mocks "github.com/aws/amazon-eks-pod-identity-webhook/pkg/mocks/math/rand"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"io"
 	"io/ioutil"
 	"k8s.io/apimachinery/pkg/types"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -49,9 +52,11 @@ func TestMutatePod(t *testing.T) {
 	}
 
 	modifier := NewModifier(
+		getAlwaysZeroRand(t),
 		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
 		WithContainerCredentialsConfig(&containercredentials.FakeConfig{}),
 	)
+
 	cases := []struct {
 		caseName string
 		input    *v1beta1.AdmissionReview
@@ -105,6 +110,7 @@ func TestMutatePod(t *testing.T) {
 
 func TestMutatePod_MutationNotNeeded(t *testing.T) {
 	modifier := NewModifier(
+		getAlwaysZeroRand(t),
 		WithServiceAccountCache(cache.NewFakeServiceAccountCache()),
 		WithContainerCredentialsConfig(&containercredentials.FakeConfig{}),
 	)
@@ -180,22 +186,15 @@ func serializeAdmissionReview(t *testing.T, want *v1beta1.AdmissionReview) []byt
 	return wantedBytes
 }
 
-func TestAddJitterMinMax(t *testing.T) {
-	var (
-		min int64
-		max int64
-	)
-	min, max = 8, 11
-	for i := 0; i < 10; i++ {
-		jitter, err := addJitter(10, 1000, min, max)
-		assert.True(t, jitter >= min && jitter <= max)
-		assert.True(t, err == nil)
-	}
-}
+func getAlwaysZeroRand(t *testing.T) *rand.Rand {
+	// Mock random and always return 0
+	mockRandomSource := mocks.NewSource64(t)
+	mockRandomSource.On("Int63", mock.Anything).Return(int64(0))
 
-func TestAddJitterMinGTMax(t *testing.T) {
-	_, err := addJitter(10, 1000, 11, 8)
-	assert.True(t, err != nil)
+	mockRand := rand.New(mockRandomSource)
+	mockRand.Int63()
+
+	return mockRand
 }
 
 func TestModifierHandler(t *testing.T) {
@@ -208,6 +207,7 @@ func TestModifierHandler(t *testing.T) {
 	}
 
 	modifier := NewModifier(
+		getAlwaysZeroRand(t),
 		WithServiceAccountCache(cache.NewFakeServiceAccountCache(testServiceAccount)),
 		WithContainerCredentialsConfig(&containercredentials.FakeConfig{}),
 	)

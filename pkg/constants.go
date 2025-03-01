@@ -18,7 +18,9 @@ const (
 	// 24hrs as that is max for EKS
 	MaxTokenExpiration = int64(86400)
 	// Default token expiration in seconds if none is defined, 22hrs
-	DefaultTokenExpiration = int64(79200)
+	DefaultTokenExpiration = int64(86400)
+	// Used for the minimum jitter value when using the default token expiration
+	DefaultMinTokenExpiration = int64(79200)
 	// 10mins is min for kube-apiserver
 	MinTokenExpiration = int64(600)
 
