@@ -467,7 +467,6 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	klog.V(5).Infof("Value of roleArn after after cache retrieval for service account %s: %s", request.CacheKey(), response.RoleARN)
 	if response.RoleARN != "" {
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, response.TokenExpiration)
-		tokenExpiration = m.addJitterToDefaultToken(tokenExpiration)
 
 		webhookPodCount.WithLabelValues("sts_web_identity").Inc()
 
