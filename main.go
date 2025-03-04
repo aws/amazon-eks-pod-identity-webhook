@@ -21,6 +21,7 @@ import (
 	"crypto/x509/pkix"
 	goflag "flag"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -46,6 +47,7 @@ import (
 )
 
 var webhookVersion = "v0.1.0"
+var random = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func main() {
 	port := flag.Int("port", 443, "Port to listen on")
@@ -208,6 +210,7 @@ func main() {
 	}
 
 	mod := handler.NewModifier(
+		random,
 		handler.WithAnnotationDomain(*annotationPrefix),
 		handler.WithMountPath(*mountPath),
 		handler.WithServiceAccountCache(saCache),

@@ -10,7 +10,7 @@ metadata:
     testing.eks.amazonaws.com/containercredentials/mountPath: "/con-creds-mount-path"
     testing.eks.amazonaws.com/containercredentials/volumeName: "con-creds-volume-name"
     testing.eks.amazonaws.com/containercredentials/tokenPath: "con-creds-token-path"
-    testing.eks.amazonaws.com/expectedPatch: '[{"op":"add","path":"/spec/volumes/0","value":{"name":"con-creds-volume-name","projected":{"sources":[{"serviceAccountToken":{"audience":"con-creds-aud","expirationSeconds":86400,"path":"con-creds-token-path"}}]}}},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_CONTAINER_CREDENTIALS_FULL_URI","value":"con-creds-uri"},{"name":"AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE","value":"/con-creds-mount-path/con-creds-token-path"}],"resources":{},"volumeMounts":[{"name":"con-creds-volume-name","readOnly":true,"mountPath":"/con-creds-mount-path"}]}]}]'
+    testing.eks.amazonaws.com/expectedPatch: '[{"op":"add","path":"/spec/volumes/0","value":{"name":"con-creds-volume-name","projected":{"sources":[{"serviceAccountToken":{"audience":"con-creds-aud","expirationSeconds":79200,"path":"con-creds-token-path"}}]}}},{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_CONTAINER_CREDENTIALS_FULL_URI","value":"con-creds-uri"},{"name":"AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE","value":"/con-creds-mount-path/con-creds-token-path"}],"resources":{},"volumeMounts":[{"name":"con-creds-volume-name","readOnly":true,"mountPath":"/con-creds-mount-path"}]}]}]'
 spec:
   containers:
   - image: amazonlinux
