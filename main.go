@@ -26,6 +26,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"context"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
@@ -33,8 +34,7 @@ import (
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cert"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/handler"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	flag "github.com/spf13/pflag"
 	"k8s.io/client-go/informers"
@@ -136,20 +136,15 @@ func main() {
 
 	*tokenExpiration = pkg.ValidateMinTokenExpiration(*tokenExpiration)
 
-	var identity ec2metadata.EC2InstanceIdentityDocument
+	var identity imds.InstanceIdentityDocument
 	var composeRoleArnCache cache.ComposeRoleArn
 	if *composeRoleArn {
-		sess, err := session.NewSession()
-		if err != nil {
-			klog.Fatalf("Error creating session: %v", err.Error())
-		}
-
-		metadataClient := ec2metadata.New(sess)
-		identity, err = metadataClient.GetInstanceIdentityDocument()
+		ec2 := imds.New(imds.Options{})
+		getInstanceIdentityDocumentOutput, err := ec2.GetInstanceIdentityDocument(context.Background(), &imds.GetInstanceIdentityDocumentInput{})
 		if err != nil {
 			klog.Fatalf("Error getting instance identity document: %v", err.Error())
 		}
-
+		identity = getInstanceIdentityDocumentOutput.InstanceIdentityDocument
 		region := identity.Region
 		var partition string
 		switch {

@@ -3,7 +3,8 @@ module github.com/aws/amazon-eks-pod-identity-webhook
 go 1.24.0
 
 require (
-	github.com/aws/aws-sdk-go v1.44.259
+	github.com/aws/aws-sdk-go-v2 v1.36.3
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.30
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-jose/go-jose/v4 v4.0.1
 	github.com/pkg/errors v0.9.1
@@ -20,6 +21,7 @@ require (
 )
 
 require (
+	github.com/aws/smithy-go v1.22.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -34,7 +36,6 @@ require (
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect

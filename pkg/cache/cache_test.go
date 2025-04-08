@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
-	awsarn "github.com/aws/aws-sdk-go/aws/arn"
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"

@@ -1,7 +1,7 @@
 ** github.com/aws/amazon-eks-pod-identity-webhook; version master --
 https://github.com/aws/amazon-eks-pod-identity-webhook
-** github.com/aws/aws-sdk-go; version 1.29.27 --
-https://github.com/aws/aws-sdk-go/
+** github.com/aws/aws-sdk-go-v2; version 1.36.3 --
+https://github.com/aws/aws-sdk-go-v2
 ** github.com/docker/distribution; version v2.7.1 --
 https://github.com/docker/distribution
 ** github.com/google/gofuzz; version v1.0.0 -- https://github.com/google/gofuzz
