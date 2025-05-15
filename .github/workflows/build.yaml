@@ -13,7 +13,7 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::719983614556:role/github-actions-amazon-eks-pod-identity-webhook
+        role-to-assume: arn:aws:iam::314666526026:role/github-actions-amazon-eks-pod-identity-webhook
         aws-region: us-east-1
     - name: Login to Amazon ECR Public
       id: login-ecr-public
@@ -27,13 +27,12 @@ jobs:
       uses: crazy-max/ghaction-docker-buildx@v3
       with:
         buildx-version: latest
-        qemu-version: latest
-    
+        qemu-version: latest  
     - name: Build container and push to Dockerhub registry
       run: |
         BRANCH=$(echo $GITHUB_REF | cut -d'/' -f3)
         SHORT_SHA=$(echo $GITHUB_SHA | cut -c -7)
-        REPO=public.ecr.aws/c5c3y3r8/amazon-eks-pod-identity-webhook
+        REPO=public.ecr.aws/eks/amazon-eks-pod-identity-webhook
         if [ "$BRANCH" = "master" ]; then
           TAG=$SHORT_SHA
         else
