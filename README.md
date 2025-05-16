@@ -227,7 +227,7 @@ metadata:
 
 ## Container Images
 
-Container images for amazon-eks-pod-identity-webhook can be found on [Docker Hub](https://hub.docker.com/r/amazon/amazon-eks-pod-identity-webhook).
+Container images for amazon-eks-pod-identity-webhook can be found on [ECR](https://gallery.ecr.aws/eks/amazon-eks-pod-identity-webhook).
 
 ## Installation
 

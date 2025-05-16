@@ -6,8 +6,20 @@ jobs:
     # this is to prevent the job to run at forked projects
     if: github.repository == 'aws/amazon-eks-pod-identity-webhook'
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     steps:
     - uses: actions/checkout@v3
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::314666526026:role/github-actions-amazon-eks-pod-identity-webhook
+        aws-region: us-east-1
+    - name: Login to Amazon ECR Public
+      id: login-ecr-public
+      uses: aws-actions/amazon-ecr-login@v2
+      with:
+        registry-type: public
     - name: Setup Go Version
       run: echo "GO_VERSION=$(cat .go-version)" >> $GITHUB_ENV
     - name: Set up Docker Buildx
@@ -15,27 +27,17 @@ jobs:
       uses: crazy-max/ghaction-docker-buildx@v3
       with:
         buildx-version: latest
-        qemu-version: latest
+        qemu-version: latest  
     - name: Build container and push to Dockerhub registry
       run: |
         BRANCH=$(echo $GITHUB_REF | cut -d'/' -f3)
         SHORT_SHA=$(echo $GITHUB_SHA | cut -c -7)
-        REPO=amazon/amazon-eks-pod-identity-webhook
+        REPO=public.ecr.aws/eks/amazon-eks-pod-identity-webhook
         if [ "$BRANCH" = "master" ]; then
           TAG=$SHORT_SHA
         else
           TAG=$BRANCH
         fi
-        if [[ -z "${{ secrets.DOCKERHUB_USER }}" || -z "${{ secrets.DOCKERHUB_TOKEN }}" ]]; then
-          docker buildx build \
-                -t $REPO:$TAG \
-                --build-arg golang_image=public.ecr.aws/eks-distro-build-tooling/golang:${{ env.GO_VERSION }}-gcc \
-                --platform=linux/amd64,linux/arm64 \
-                --progress plain \
-                .
-          exit 0
-        fi
-        docker login -u ${{ secrets.DOCKERHUB_USER }} -p ${{ secrets.DOCKERHUB_TOKEN }}
 
         docker buildx build \
               -t $REPO:$TAG \
