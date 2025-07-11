@@ -17,24 +17,55 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"k8s.io/klog/v2"
 )
 
-func ShutdownFromContext(ctx context.Context, server *http.Server, timeout time.Duration) {
+// ShutdownFromContext gracefully shuts down an HTTP server when the provided context is cancelled.
+// It waits for ctx to be cancelled, then attempts a graceful shutdown with the given timeout.
+// If graceful shutdown fails, it will attempt to force close the server.
+//
+// Parameters:
+//   - ctx: Context to watch for cancellation signal
+//   - server: HTTP server to shutdown
+//   - timeout: Maximum time to wait for graceful shutdown
+//
+// Returns:
+//   - <-chan struct{}: Closed when shutdown process completes
+//   - <-chan error: Receives shutdown error if shutdown wasn't graceful (nil on success)
+func ShutdownFromContext(ctx context.Context, server *http.Server, timeout time.Duration) (<-chan struct{}, <-chan error) {
+	errCh := make(chan error, 1)
+	doneCh := make(chan struct{})
+
 	go func() {
+		defer close(doneCh)
+		defer close(errCh)
+
 		<-ctx.Done()
+		klog.Info("Context cancelled, beginning graceful shutdown")
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			klog.Errorf("Error shutting server down: %v", err)
-			if err := server.Close(); err != nil {
-				klog.Fatalf("Error closing server: %v", err)
+			// Try to force close the server because the server didn't shutdown gracefully within the timeout
+			if closeErr := server.Close(); closeErr != nil {
+				errCh <- errors.Join(
+					fmt.Errorf("graceful server shutdown failed: %w", err),
+					fmt.Errorf("server force close failed: %w", closeErr),
+				)
+			} else {
+				errCh <- fmt.Errorf("graceful server shutdown failed, server has been force closed: %w", err)
 			}
+		} else {
+			// Graceful shutdown succeeded
+			errCh <- nil
 		}
 	}()
+
+	return doneCh, errCh
 }
