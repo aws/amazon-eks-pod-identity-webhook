@@ -16,9 +16,11 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	goflag "flag"
 	"fmt"
 	"math/rand"
@@ -26,7 +28,6 @@ import (
 	"os"
 	"strings"
 	"time"
-	"context"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
@@ -309,26 +310,45 @@ func main() {
 		Handler:   mux,
 		TLSConfig: tlsConfig,
 	}
-
-	handler.ShutdownFromContext(signalHandlerCtx, server, time.Duration(10)*time.Second)
+	serverDone, serverShutdownError := handler.ShutdownFromContext(signalHandlerCtx, server, time.Duration(10)*time.Second)
 
 	metricsServer := &http.Server{
 		Addr:    metricsAddr,
 		Handler: metricsMux,
 	}
+	metricsServerDone, metricsServerShutdownError := handler.ShutdownFromContext(signalHandlerCtx, metricsServer, time.Duration(10)*time.Second)
 
-	handler.ShutdownFromContext(signalHandlerCtx, metricsServer, time.Duration(10)*time.Second)
-
+	// Start webhook server
 	go func() {
 		klog.Infof("Listening on %s", addr)
-		if err := server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+		if err := server.ListenAndServeTLS("", ""); !errors.Is(err, http.ErrServerClosed) {
 			klog.Fatalf("Error listening: %q", err)
 		}
 	}()
 
-	klog.Infof("Listening on %s for metrics", metricsAddr)
-	if err := metricsServer.ListenAndServe(); err != http.ErrServerClosed {
-		klog.Fatalf("Error listening: %q", err)
+	// Start metrics server
+	go func() {
+		klog.Infof("Listening on %s for metrics", metricsAddr)
+		if err := metricsServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			klog.Fatalf("Error listening: %q", err)
+		}
+	}()
+
+	klog.Info("Waiting for webhook and metrics servers to shutdown...")
+
+	// Wait for webhook server shutdown
+	<-serverDone
+	if err := <-serverShutdownError; err != nil {
+		klog.Errorf("Webhook server shutdown error: %v", err)
+	} else {
+		klog.Infof("Webhook server shutdown gracefully")
 	}
-	klog.Info("Graceflully closed")
+
+	// Wait for metrics server shutdown
+	<-metricsServerDone
+	if err := <-metricsServerShutdownError; err != nil {
+		klog.Errorf("Metrics server shutdown error: %v", err)
+	} else {
+		klog.Infof("Metrics server shutdown gracefully")
+	}
 }
