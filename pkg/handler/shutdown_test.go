@@ -50,14 +50,9 @@ func TestShutdownFromContext_SuccessfulGracefulShutdown(t *testing.T) {
 		t.Fatal("Shutdown did not complete within expected time")
 	}
 
-	// Check that no error occurred (graceful shutdown succeeded)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Errorf("Expected no error for graceful shutdown, got: %v", err)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("Did not receive error status within expected time")
+	// Check that no error occurred (graceful shutdown succeeded).
+	if err := <-errCh; err != nil {
+		t.Errorf("Expected no error for graceful shutdown, got: %v", err)
 	}
 }
 
@@ -100,14 +95,9 @@ func TestShutdownFromContext_GracefulShutdownTimeout(t *testing.T) {
 	}
 
 	// Check that we got an error (timeout should always cause an error)
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Error("Expected error for graceful shutdown timeout, but got nil")
-		} else {
-			t.Logf("Received expected error with very short timeout: %v", err)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("Did not receive error status within expected time")
+	if err := <-errCh; err == nil {
+		t.Error("Expected error for graceful shutdown timeout, but got nil")
+	} else {
+		t.Logf("Received expected error with very short timeout: %v", err)
 	}
 }
