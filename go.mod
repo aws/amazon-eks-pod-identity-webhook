@@ -3,7 +3,7 @@ module github.com/aws/amazon-eks-pod-identity-webhook
 go 1.24.4
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.36.3
+	github.com/aws/aws-sdk-go-v2 v1.39.2
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.30
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-jose/go-jose/v4 v4.0.1
@@ -21,7 +21,7 @@ require (
 )
 
 require (
-	github.com/aws/smithy-go v1.22.2 // indirect
+	github.com/aws/smithy-go v1.23.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
