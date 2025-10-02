@@ -157,6 +157,8 @@ func main() {
 			partition = "aws-iso"
 		case strings.HasPrefix(region, "us-isob-"):
 			partition = "aws-iso-b"
+		case strings.HasPrefix(region, "eusc-"):
+			partition = "aws-eusc"
 		default:
 			partition = "aws"
 		}
