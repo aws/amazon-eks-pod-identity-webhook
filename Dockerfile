@@ -1,4 +1,4 @@
-ARG golang_image=public.ecr.aws/eks-distro-build-tooling/golang:1.24.10
+ARG golang_image=public.ecr.aws/eks-distro-build-tooling/golang:1.24.11
 
 FROM --platform=$BUILDPLATFORM $golang_image AS builder
 WORKDIR $GOPATH/src/github.com/aws/amazon-eks-pod-identity-webhook
