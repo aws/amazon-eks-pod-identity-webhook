@@ -14,6 +14,27 @@
 */
 package pkg
 
+import (
+	"crypto/tls"
+	"fmt"
+	"strings"
+)
+
+func ValidateTLSMinVersion(version string) (uint16, error) {
+	switch version {
+	case "1.0":
+		return tls.VersionTLS10, nil
+	case "1.1":
+		return tls.VersionTLS11, nil
+	case "1.2":
+		return tls.VersionTLS12, nil
+	case "1.3":
+		return tls.VersionTLS13, nil
+	default:
+		return 0, fmt.Errorf("unsupported version %s", version)
+	}
+}
+
 func ValidateMinTokenExpiration(expiration int64) (int64) {
 	if expiration < MinTokenExpiration {
 		return MinTokenExpiration
