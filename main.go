@@ -62,6 +62,7 @@ func main() {
 	apiURL := flag.String("kube-api", "", "(out-of-cluster) The url to the API server")
 	tlsKeyFile := flag.String("tls-key", "/etc/webhook/certs/tls.key", "(out-of-cluster) TLS key file path")
 	tlsCertFile := flag.String("tls-cert", "/etc/webhook/certs/tls.crt", "(out-of-cluster) TLS certificate file path")
+	tlsMinVersion := flag.String("tls-min-version", "", "The minimum TLS version to be used by the webhook server. (1.0, 1.1, 1.2, 1.3)")
 
 	// in-cluster TLS options
 	inCluster := flag.Bool("in-cluster", true, "Use in-cluster authentication and certificate request API")
@@ -256,6 +257,21 @@ func main() {
 	}
 
 	tlsConfig := &tls.Config{}
+
+	if *tlsMinVersion != "" {
+		switch *tlsMinVersion {
+		case "1.0":
+			tlsConfig.MinVersion = tls.VersionTLS10
+		case "1.1":
+			tlsConfig.MinVersion = tls.VersionTLS11
+		case "1.2":
+			tlsConfig.MinVersion = tls.VersionTLS12
+		case "1.3":
+			tlsConfig.MinVersion = tls.VersionTLS13
+		default:
+			klog.Fatalf("invalid value for tls-min-version: %s", *tlsMinVersion)
+		}
+	}
 
 	if *inCluster {
 		csr := &x509.CertificateRequest{
