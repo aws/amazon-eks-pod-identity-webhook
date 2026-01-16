@@ -21,6 +21,76 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestValidateTLSCipherSuites(t *testing.T) {
+	// Pick a couple of standard cipher suites that should be available
+	// Note: We need to ensure we pick ones that are in tls.CipherSuites() or tls.InsecureCipherSuites()
+	// TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 is standard in Go
+	validCipherName := "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+	validCipherID := uint16(tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)
+
+	tests := []struct {
+		name        string
+		input       []string
+		expectedIDs []uint16
+		expectError bool
+	}{
+		{
+			name:        "empty input",
+			input:       []string{},
+			expectedIDs: nil,
+			expectError: false,
+		},
+		{
+			name:        "nil input",
+			input:       nil,
+			expectedIDs: nil,
+			expectError: false,
+		},
+		{
+			name:        "valid cipher",
+			input:       []string{validCipherName},
+			expectedIDs: []uint16{validCipherID},
+			expectError: false,
+		},
+		{
+			name:        "valid cipher with whitespace",
+			input:       []string{" " + validCipherName + " "},
+			expectedIDs: []uint16{validCipherID},
+			expectError: false,
+		},
+		{
+			name:        "invalid cipher",
+			input:       []string{"INVALID_CIPHER_SUITE"},
+			expectedIDs: nil,
+			expectError: true,
+		},
+		{
+			name:        "mixed valid and invalid",
+			input:       []string{validCipherName, "INVALID_CIPHER_SUITE"},
+			expectedIDs: nil,
+			expectError: true,
+		},
+		{
+			name:        "empty string in slice",
+			input:       []string{validCipherName, ""},
+			expectedIDs: []uint16{validCipherID},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ValidateTLSCipherSuites(tt.input)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedIDs, got)
+			}
+		})
+	}
+}
+
 func TestValidateTLSMinVersion(t *testing.T) {
 	tests := []struct {
 		name        string

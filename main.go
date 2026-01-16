@@ -62,6 +62,7 @@ func main() {
 	apiURL := flag.String("kube-api", "", "(out-of-cluster) The url to the API server")
 	tlsKeyFile := flag.String("tls-key", "/etc/webhook/certs/tls.key", "(out-of-cluster) TLS key file path")
 	tlsCertFile := flag.String("tls-cert", "/etc/webhook/certs/tls.crt", "(out-of-cluster) TLS certificate file path")
+	tlsCipherSuites := flag.String("tls-cipher-suites", "", "Comma-separated list of cipher suites for the server. If omitted, the default Go cipher suites will be used")
 	tlsMinVersion := flag.String("tls-min-version", "", "The minimum TLS version to be used by the webhook server. (1.0, 1.1, 1.2, 1.3)")
 
 	// in-cluster TLS options
@@ -257,6 +258,14 @@ func main() {
 	}
 
 	tlsConfig := &tls.Config{}
+
+	if *tlsCipherSuites != "" {
+		suites, err := pkg.ValidateTLSCipherSuites(strings.Split(*tlsCipherSuites, ","))
+		if err != nil {
+			klog.Fatalf("invalid tls-cipher-suites: %v", err)
+		}
+		tlsConfig.CipherSuites = suites
+	}
 
 	if *tlsMinVersion != "" {
 		minVersion, err := pkg.ValidateTLSMinVersion(*tlsMinVersion)

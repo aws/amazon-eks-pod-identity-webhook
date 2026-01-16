@@ -20,6 +20,36 @@ import (
 	"strings"
 )
 
+func ValidateTLSCipherSuites(cipherNames []string) ([]uint16, error) {
+	if len(cipherNames) == 0 {
+		return nil, nil
+	}
+
+	// Create a map of all available cipher suites
+	availableSuites := make(map[string]uint16)
+	for _, suite := range tls.CipherSuites() {
+		availableSuites[suite.Name] = suite.ID
+	}
+	// Also include insecure suites just in case, though discouraged
+	for _, suite := range tls.InsecureCipherSuites() {
+		availableSuites[suite.Name] = suite.ID
+	}
+
+	var ids []uint16
+	for _, name := range cipherNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		id, ok := availableSuites[name]
+		if !ok {
+			return nil, fmt.Errorf("unsupported cipher suite: %s", name)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 func ValidateTLSMinVersion(version string) (uint16, error) {
 	switch version {
 	case "1.0":
