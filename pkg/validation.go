@@ -52,13 +52,13 @@ func ValidateTLSCipherSuites(cipherNames []string) ([]uint16, error) {
 
 func ValidateTLSMinVersion(version string) (uint16, error) {
 	switch version {
-	case "1.0":
+	case "1.0", "VersionTLS10":
 		return tls.VersionTLS10, nil
-	case "1.1":
+	case "1.1", "VersionTLS11":
 		return tls.VersionTLS11, nil
-	case "1.2":
+	case "1.2", "VersionTLS12":
 		return tls.VersionTLS12, nil
-	case "1.3":
+	case "1.3", "VersionTLS13":
 		return tls.VersionTLS13, nil
 	default:
 		return 0, fmt.Errorf("unsupported version %s", version)
