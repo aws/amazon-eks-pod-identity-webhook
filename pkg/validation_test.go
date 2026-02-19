@@ -99,9 +99,21 @@ func TestValidateTLSMinVersion(t *testing.T) {
 		expectError bool
 	}{
 		{
+			name:        "valid VersionTLS10",
+			input:       "VersionTLS10",
+			expectedVer: tls.VersionTLS10,
+			expectError: false,
+		},
+		{
 			name:        "valid 1.0",
 			input:       "1.0",
 			expectedVer: tls.VersionTLS10,
+			expectError: false,
+		},
+		{
+			name:        "valid VersionTLS11",
+			input:       "VersionTLS11",
+			expectedVer: tls.VersionTLS11,
 			expectError: false,
 		},
 		{
@@ -111,9 +123,21 @@ func TestValidateTLSMinVersion(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:        "valid VersionTLS12",
+			input:       "VersionTLS12",
+			expectedVer: tls.VersionTLS12,
+			expectError: false,
+		},
+		{
 			name:        "valid 1.2",
 			input:       "1.2",
 			expectedVer: tls.VersionTLS12,
+			expectError: false,
+		},
+		{
+			name:        "valid VersionTLS13",
+			input:       "VersionTLS13",
+			expectedVer: tls.VersionTLS13,
 			expectError: false,
 		},
 		{
