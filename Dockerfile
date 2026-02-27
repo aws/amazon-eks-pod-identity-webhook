@@ -7,7 +7,7 @@ RUN go version
 ARG TARGETOS TARGETARCH
 RUN GOPROXY=direct CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /webhook -v -a -ldflags="-buildid='' -w -s" .
 
-FROM --platform=$TARGETPLATFORM public.ecr.aws/eks-distro/kubernetes/go-runner:v0.18.0-eks-1-35-latest
+FROM --platform=$TARGETPLATFORM public.ecr.aws/eks-distro-build-tooling/go-runner:v0.18.0-go-1.25-latest.al2
 COPY --from=builder /webhook /webhook
 ENTRYPOINT ["/go-runner"]
 CMD ["/webhook"]
