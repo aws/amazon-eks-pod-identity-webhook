@@ -177,6 +177,7 @@ func TestFetchFromAPIServer(t *testing.T) {
 		"eks.amazonaws.com",
 		true,
 		86400,
+		"",
 		emptyInformer,
 		nil,
 		ComposeRoleArn{},
@@ -300,6 +301,7 @@ func TestNonRegionalSTS(t *testing.T) {
 				"eks.amazonaws.com",
 				tc.defaultRegionalSTS,
 				86400,
+				"",
 				informer,
 				nil,
 				testComposeRoleArn,
@@ -648,6 +650,7 @@ func TestRoleArnComposition(t *testing.T) {
 		"eks.amazonaws.com",
 		true,
 		86400,
+		"",
 		informer,
 		nil,
 		testComposeRoleArn,
@@ -761,7 +764,7 @@ func TestGetCommonConfigurations(t *testing.T) {
 				cache.populateCacheFromCM(nil, tc.configMap)
 			}
 
-			useRegionalSTS, tokenExpiration := cache.GetCommonConfigurations(tc.requestServiceAccount, tc.requestNamespace)
+			useRegionalSTS, tokenExpiration, _ := cache.GetCommonConfigurations(tc.requestServiceAccount, tc.requestNamespace)
 			assert.Equal(t, tc.expectedUseRegionalSTS, useRegionalSTS)
 			assert.Equal(t, tc.expectedTokenExpiration, tokenExpiration)
 		})
