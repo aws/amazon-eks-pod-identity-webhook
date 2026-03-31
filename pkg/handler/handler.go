@@ -363,6 +363,26 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 
 	patch := []patchOperation{}
 
+	// Add label for container credentials mode
+	if patchConfig.ContainerCredentialsPatchConfig != nil {
+		if pod.Labels == nil {
+			patch = append(patch, patchOperation{
+				Op:   "add",
+				Path: "/metadata/labels",
+				Value: map[string]string{
+					"eks.amazonaws.com/pod-identity": "enabled",
+				},
+			})
+		} else {
+			patch = append(patch, patchOperation{
+				Op:    "add",
+				Path:  "/metadata/labels/eks.amazonaws.com~1pod-identity",
+				Value: "enabled",
+			})
+		}
+		changed = true
+	}
+
 	// skip adding volume if it already exists
 	volExists := false
 	for _, vol := range pod.Spec.Volumes {
