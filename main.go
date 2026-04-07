@@ -38,6 +38,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	flag "github.com/spf13/pflag"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	v1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -136,6 +138,11 @@ func main() {
 	}
 
 	saInformer := informerFactory.Core().V1().ServiceAccounts()
+
+	// Strip ServiceAccount objects down to only the fields the cache needs
+	// (Name, Namespace, Annotations). This significantly reduces memory usage
+	// of the informer store on large clusters.
+	saInformer.Informer().SetTransform(stripDownServiceAccount)
 
 	*tokenExpiration = pkg.ValidateMinTokenExpiration(*tokenExpiration)
 
@@ -371,4 +378,31 @@ func main() {
 	} else {
 		klog.Infof("Metrics server shutdown gracefully")
 	}
+}
+
+// stripDownServiceAccount is a transform function that strips down ServiceAccount
+// objects to reduce memory usage of the informer store on large clusters.
+// See details in [stripDownServiceAccountObject].
+func stripDownServiceAccount(obj interface{}) (interface{}, error) {
+	if sa, ok := obj.(*corev1.ServiceAccount); ok {
+		return stripDownServiceAccountObject(sa), nil
+	}
+	return obj, nil
+}
+
+// stripDownServiceAccountObject strips a ServiceAccount down to only the fields
+// the cache needs (Name, Namespace, Annotations, ResourceVersion).
+// NOTE: if the webhook needs to refer to more SA fields in the future, those
+// fields need to be added here.
+func stripDownServiceAccountObject(sa *corev1.ServiceAccount) *corev1.ServiceAccount {
+	sa.ObjectMeta = metav1.ObjectMeta{
+		Name:            sa.Name,
+		Namespace:       sa.Namespace,
+		Annotations:     sa.Annotations,
+		ResourceVersion: sa.ResourceVersion,
+	}
+	sa.Secrets = nil
+	sa.ImagePullSecrets = nil
+	sa.AutomountServiceAccountToken = nil
+	return sa
 }
