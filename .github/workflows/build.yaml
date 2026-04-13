@@ -9,22 +9,22 @@ jobs:
     permissions:
       id-token: write
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 #v3.6.0
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a #v4.3.1
       with:
         role-to-assume: arn:aws:iam::314666526026:role/github-actions-amazon-eks-pod-identity-webhook
         aws-region: us-east-1
     - name: Login to Amazon ECR Public
       id: login-ecr-public
-      uses: aws-actions/amazon-ecr-login@v2
+      uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 #v2.0.1
       with:
         registry-type: public
     - name: Setup Go Version
       run: echo "GO_VERSION=$(cat .go-version)" >> $GITHUB_ENV
     - name: Set up Docker Buildx
       id: buildx
-      uses: crazy-max/ghaction-docker-buildx@v3
+      uses: crazy-max/ghaction-docker-buildx@126d331dc69f4a1aa02452e374835e6a5d565613 #v3.3.1
       with:
         buildx-version: latest
         qemu-version: latest  
