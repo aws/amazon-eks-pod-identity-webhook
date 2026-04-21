@@ -177,6 +177,15 @@ func getValidReview(pod []byte) *v1beta1.AdmissionReview {
 	}
 }
 
+func getValidReviewWithTypeMeta(pod []byte, apiVersion, kind string) *v1beta1.AdmissionReview {
+	review := getValidReview(pod)
+	review.TypeMeta = metav1.TypeMeta{
+		APIVersion: apiVersion,
+		Kind:       kind,
+	}
+	return review
+}
+
 func serializeAdmissionReview(t *testing.T, want *v1beta1.AdmissionReview) []byte {
 	wantedBytes, err := json.Marshal(want)
 	if err != nil {
@@ -228,7 +237,7 @@ func TestModifierHandler(t *testing.T) {
 			nil,
 			"application/json",
 			serializeAdmissionReview(t, &v1beta1.AdmissionReview{
-				Response: &v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "bad content"}},
+				Response: &v1beta1.AdmissionResponse{Result: &metav1.Status{Message: "unexpected end of JSON input"}},
 			}),
 		},
 		{
@@ -249,7 +258,7 @@ func TestModifierHandler(t *testing.T) {
 			"InvalidJSON",
 			[]byte(`{"request": {"object": "\"metadata\":{\"name\":\"fake\""}`),
 			"application/json",
-			[]byte(`{"response":{"uid":"","allowed":false,"status":{"metadata":{},"message":"couldn't get version/kind; json parse error: unexpected end of JSON input"}}}`),
+			[]byte(`{"response":{"uid":"","allowed":false,"status":{"metadata":{},"message":"unexpected end of JSON input"}}}`),
 		},
 		{
 			"InvalidPodBytes",
@@ -262,6 +271,22 @@ func TestModifierHandler(t *testing.T) {
 			serializeAdmissionReview(t, getValidReview(rawPodWithoutVolume)),
 			"application/json",
 			serializeAdmissionReview(t, &v1beta1.AdmissionReview{Response: getValidHandlerResponse(uuid)}),
+		},
+		{
+			// Regression test: when a v1 AdmissionReview is sent (K3s / k8s >= 1.16),
+			// the response must echo back the same apiVersion and kind so the API
+			// server can decode it. Previously the handler returned an empty TypeMeta,
+			// causing "got /, Kind=" errors on non-EKS clusters.
+			"ValidRequestV1TypeMetaEchoed",
+			serializeAdmissionReview(t, getValidReviewWithTypeMeta(rawPodWithoutVolume, "admission.k8s.io/v1", "AdmissionReview")),
+			"application/json",
+			serializeAdmissionReview(t, &v1beta1.AdmissionReview{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "admission.k8s.io/v1",
+					Kind:       "AdmissionReview",
+				},
+				Response: getValidHandlerResponse(uuid),
+			}),
 		},
 	}
 
