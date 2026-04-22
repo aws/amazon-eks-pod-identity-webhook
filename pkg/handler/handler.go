@@ -74,6 +74,11 @@ func WithRegion(region string) ModifierOpt {
 	return func(m *Modifier) { m.Region = region }
 }
 
+// WithEndpointUrl sets the modifier endpoint url
+func WithEndpointUrl(endpointUrl string) ModifierOpt {
+	return func(m *Modifier) { m.EndpointUrl = endpointUrl }
+}
+
 // WithAnnotationDomain adds an annotation domain
 func WithAnnotationDomain(domain string) ModifierOpt {
 	return func(m *Modifier) { m.AnnotationDomain = domain }
@@ -110,6 +115,7 @@ type Modifier struct {
 	AnnotationDomain           string
 	MountPath                  string
 	Region                     string
+	EndpointUrl                string
 	Cache                      cache.ServiceAccountCache
 	ContainerCredentialsConfig containercredentials.Config
 	volName                    string
@@ -132,6 +138,7 @@ type podPatchConfig struct {
 	MountPath                       string
 	VolumeName                      string
 	TokenPath                       string
+	EndpointUrl                     string
 	WebIdentityPatchConfig          *webIdentityPatchConfig
 	ContainerCredentialsPatchConfig *containercredentials.PatchConfig
 }
@@ -175,6 +182,7 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath 
 		containerCredentialsKeysDefined bool
 		regionKeyDefined                bool
 		regionalStsKeyDefined           bool
+		endpointKeyDefined              bool
 	)
 	webIdentityKeys := map[string]string{
 		"AWS_ROLE_ARN":                "",
@@ -189,6 +197,7 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath 
 		"AWS_DEFAULT_REGION": "",
 	}
 	stsKey := "AWS_STS_REGIONAL_ENDPOINTS"
+	endpointKey := "AWS_ENDPOINT_URL"
 	for _, env := range container.Env {
 		if _, ok := webIdentityKeys[env.Name]; ok {
 			klog.V(4).Infof("Web identity env variable %s is already defined in the pod spec", env)
@@ -206,6 +215,10 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath 
 		if env.Name == stsKey {
 			klog.V(4).Infof("AWS STS env variable %s is already defined in the pod spec", env)
 			regionalStsKeyDefined = true
+		}
+		if env.Name == endpointKey {
+			klog.V(4).Infof("AWS Endpoint URL env variable %s is already defined in the pod spec", env)
+			endpointKeyDefined = true
 		}
 	}
 
@@ -234,6 +247,14 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath 
 		}, corev1.EnvVar{
 			Name:  "AWS_REGION",
 			Value: m.Region,
+		})
+		changed = true
+	}
+
+	if !endpointKeyDefined && patchConfig.EndpointUrl != "" {
+		env = append(env, corev1.EnvVar{
+			Name:  "AWS_ENDPOINT_URL",
+			Value: patchConfig.EndpointUrl,
 		})
 		changed = true
 	}
@@ -441,8 +462,12 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	// Container credentials method takes precedence
 	containerCredentialsPatchConfig := m.ContainerCredentialsConfig.Get(pod.Namespace, pod.Spec.ServiceAccountName)
 	if containerCredentialsPatchConfig != nil {
-		regionalSTS, tokenExpiration := m.Cache.GetCommonConfigurations(pod.Spec.ServiceAccountName, pod.Namespace)
+		regionalSTS, tokenExpiration, endpointUrl := m.Cache.GetCommonConfigurations(pod.Spec.ServiceAccountName, pod.Namespace)
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, tokenExpiration)
+
+		if endpointUrl == "" {
+			endpointUrl = m.EndpointUrl
+		}
 
 		tokenExpiration = m.addJitterToDefaultToken(tokenExpiration)
 		webhookPodCount.WithLabelValues("container_credentials").Inc()
@@ -455,6 +480,7 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 			MountPath:                       containerCredentialsPatchConfig.MountPath,
 			VolumeName:                      containerCredentialsPatchConfig.VolumeName,
 			TokenPath:                       containerCredentialsPatchConfig.TokenPath,
+			EndpointUrl:                     endpointUrl,
 			WebIdentityPatchConfig:          nil,
 			ContainerCredentialsPatchConfig: containerCredentialsPatchConfig,
 		}
@@ -488,6 +514,11 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 	if response.RoleARN != "" {
 		tokenExpiration, containersToSkip := m.parsePodAnnotations(pod, response.TokenExpiration)
 
+		endpointUrl := response.EndpointUrl
+		if endpointUrl == "" {
+			endpointUrl = m.EndpointUrl
+		}
+
 		webhookPodCount.WithLabelValues("sts_web_identity").Inc()
 
 		return &podPatchConfig{
@@ -498,6 +529,7 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 			MountPath:                       m.MountPath,
 			VolumeName:                      m.volName,
 			TokenPath:                       m.tokenName,
+			EndpointUrl:                     endpointUrl,
 			WebIdentityPatchConfig:          &webIdentityPatchConfig{RoleArn: response.RoleARN},
 			ContainerCredentialsPatchConfig: nil,
 		}
