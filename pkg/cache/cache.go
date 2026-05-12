@@ -95,6 +95,9 @@ type serviceAccountCache struct {
 
 type ComposeRoleArn struct {
 	Enabled bool
+	// AllowNonAWSAccountID enables role ARN validation for third-party IAM-compatible
+	// providers where account ID can be non-AWS format.
+	AllowNonAWSAccountID bool
 
 	AccountID string
 	Partition string
@@ -226,7 +229,9 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 			arn = fmt.Sprintf("arn:%s:iam::%s:role/%s", c.composeRoleArn.Partition, c.composeRoleArn.AccountID, arn)
 		}
 
-		matched, err := regexp.Match(`^arn:aws[a-z0-9-]*:iam::\d{12}:role\/[\w-\/.@+=,]+$`, []byte(arn))
+		accountIDPattern := roleARNAccountIDPattern(c.composeRoleArn.AllowNonAWSAccountID)
+
+		matched, err := regexp.Match(fmt.Sprintf(`^arn:aws[a-z0-9-]*:iam::%s:role\/[\w-\/.@+=,]+$`, accountIDPattern), []byte(arn))
 		if err != nil {
 			klog.Errorf("Regex error: %v", err)
 		} else if !matched {
@@ -267,6 +272,16 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 	c.webhookUsage.Set(1)
 
 	c.setSA(sa.Name, sa.Namespace, entry)
+}
+
+func roleARNAccountIDPattern(allowNonAWSAccountID bool) string {
+	if allowNonAWSAccountID {
+		// Allow standard AWS account IDs as well as common IAM-compatible formats:
+		// empty account ID, or a 20-character alphanumeric account ID.
+		return `(?:\d{12}|[A-Za-z0-9]{20}|)`
+	}
+
+	return `\d{12}`
 }
 
 func (c *serviceAccountCache) setSA(name, namespace string, entry *Entry) {

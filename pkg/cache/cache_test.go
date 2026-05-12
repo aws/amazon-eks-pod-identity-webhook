@@ -2,6 +2,7 @@ package cache
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"sync"
 	"testing"
@@ -18,6 +19,75 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/klog/v2"
 )
+
+func TestRoleARNAccountIDPattern(t *testing.T) {
+	tests := []struct {
+		name                 string
+		allowNonAWSAccountID bool
+		arn                  string
+		wantMatch            bool
+	}{
+		{
+			name:                 "strict mode accepts aws 12-digit account id",
+			allowNonAWSAccountID: false,
+			arn:                  "arn:aws:iam::111122223333:role/s3-reader",
+			wantMatch:            true,
+		},
+		{
+			name:                 "strict mode rejects empty account id",
+			allowNonAWSAccountID: false,
+			arn:                  "arn:aws:iam:::role/examples/KubernetesExample",
+			wantMatch:            false,
+		},
+		{
+			name:                 "strict mode rejects 20-char alphanumeric account id",
+			allowNonAWSAccountID: false,
+			arn:                  "arn:aws:iam::RGW12345678901234567:role/examples/KubernetesExample",
+			wantMatch:            false,
+		},
+		{
+			name:                 "non-aws mode accepts aws 12-digit account id",
+			allowNonAWSAccountID: true,
+			arn:                  "arn:aws:iam::111122223333:role/s3-reader",
+			wantMatch:            true,
+		},
+		{
+			name:                 "non-aws mode accepts empty account id",
+			allowNonAWSAccountID: true,
+			arn:                  "arn:aws:iam:::role/examples/KubernetesExample",
+			wantMatch:            true,
+		},
+		{
+			name:                 "non-aws mode accepts 20-char alphanumeric account id",
+			allowNonAWSAccountID: true,
+			arn:                  "arn:aws:iam::RGW12345678901234567:role/examples/KubernetesExample",
+			wantMatch:            true,
+		},
+		{
+			name:                 "non-aws mode rejects invalid 19-char account id",
+			allowNonAWSAccountID: true,
+			arn:                  "arn:aws:iam::RGW1234567890123456:role/examples/KubernetesExample",
+			wantMatch:            false,
+		},
+		{
+			name:                 "non-aws mode rejects invalid 21-char account id",
+			allowNonAWSAccountID: true,
+			arn:                  "arn:aws:iam::123456789012345678901:role/examples/KubernetesExample",
+			wantMatch:            false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pattern := fmt.Sprintf(`^arn:aws[a-z0-9-]*:iam::%s:role\/[\w-\/.@+=,]+$`, roleARNAccountIDPattern(tt.allowNonAWSAccountID))
+			matched, err := regexp.Match(pattern, []byte(tt.arn))
+			if err != nil {
+				t.Fatalf("regexp match failed: %v", err)
+			}
+			assert.Equal(t, tt.wantMatch, matched)
+		})
+	}
+}
 
 func TestSaCache(t *testing.T) {
 	testSA := &v1.ServiceAccount{}
