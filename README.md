@@ -145,9 +145,11 @@ When running a container with a non-root user, you need to give the container ac
 Usage of amazon-eks-pod-identity-webhook:
       --add_dir_header                       If true, adds the file directory to the header
       --alsologtostderr                      log to standard error as well as files
+      --allow-non-aws-account-id             If true, allow non-AWS role ARN account ID formats in validation (including empty account ID and 20-character alphanumeric account ID). Defaults to false.
       --annotation-prefix string             The Service Account annotation to look for (default "eks.amazonaws.com")
       --aws-default-region string            If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers
       --enable-debugging-handlers            Enable debugging handlers. Currently /debug/alpha/cache is supported
+      --endpoint-url string                  If set, AWS_ENDPOINT_URL will be set to this value in mutated containers
       --in-cluster                           Use in-cluster authentication and certificate request API (default true)
       --kube-api string                      (out-of-cluster) The url to the API server
       --kubeconfig string                    (out-of-cluster) Absolute path to the API server kubeconfig file
@@ -193,6 +195,21 @@ account](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_en
 
 You can also enable this per-service account with the annotation
 `eks.amazonaws.com/sts-regional-endpoints` set to `"true"`.
+
+### AWS_ENDPOINT_URL Injection
+
+When the `endpoint-url` flag is set, the webhook will inject `AWS_ENDPOINT_URL`
+in mutated containers if `AWS_ENDPOINT_URL` is not already set.
+
+You can also override this per-service account with the annotation
+`eks.amazonaws.com/endpoint-url`.
+
+### Non-AWS Account ID Validation
+
+When the `allow-non-aws-account-id` flag is set to `true`, the role ARN
+validator accepts IAM-compatible account ID formats used by third-party
+providers, including an empty account ID or a 20-character alphanumeric account
+ID.
 
 ### pod-identity-webhook ConfigMap
 
@@ -263,4 +280,3 @@ See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 ## License
 Apache 2.0 - Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 See [LICENSE](LICENSE)
-

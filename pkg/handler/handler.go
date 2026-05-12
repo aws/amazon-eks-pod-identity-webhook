@@ -222,9 +222,10 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath 
 		}
 	}
 
+	endpointKeySatisfied := patchConfig.EndpointUrl == "" || endpointKeyDefined
 	if ((patchConfig.WebIdentityPatchConfig != nil && webIdentityKeysDefined) ||
 		(patchConfig.ContainerCredentialsPatchConfig != nil && containerCredentialsKeysDefined)) &&
-		regionKeyDefined && regionalStsKeyDefined {
+		regionKeyDefined && regionalStsKeyDefined && endpointKeySatisfied {
 		klog.V(4).Infof("Container %s has necessary env variables already present", container.Name)
 		return false
 	}
