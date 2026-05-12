@@ -145,7 +145,7 @@ When running a container with a non-root user, you need to give the container ac
 Usage of amazon-eks-pod-identity-webhook:
       --add_dir_header                       If true, adds the file directory to the header
       --alsologtostderr                      log to standard error as well as files
-      --allow-non-aws-account-id             If true, allow non-AWS role ARN account ID formats in validation (including empty account ID and 20-character alphanumeric account ID). Defaults to false.
+      --allow-non-aws-account-id             If true, relax role ARN account ID validation warnings for non-AWS IAM-compatible providers (including empty account ID and 20-character alphanumeric account ID). Defaults to false.
       --annotation-prefix string             The Service Account annotation to look for (default "eks.amazonaws.com")
       --aws-default-region string            If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers
       --enable-debugging-handlers            Enable debugging handlers. Currently /debug/alpha/cache is supported
@@ -207,9 +207,9 @@ You can also override this per-service account with the annotation
 ### Non-AWS Account ID Validation
 
 When the `allow-non-aws-account-id` flag is set to `true`, the role ARN
-validator accepts IAM-compatible account ID formats used by third-party
-providers, including an empty account ID or a 20-character alphanumeric account
-ID.
+validator does not warn for IAM-compatible account ID formats used by
+third-party providers, including an empty account ID or a 20-character
+alphanumeric account ID.
 
 ### pod-identity-webhook ConfigMap
 

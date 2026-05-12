@@ -95,8 +95,8 @@ type serviceAccountCache struct {
 
 type ComposeRoleArn struct {
 	Enabled bool
-	// AllowNonAWSAccountID enables role ARN validation for third-party IAM-compatible
-	// providers where account ID can be non-AWS format.
+	// AllowNonAWSAccountID relaxes role ARN account ID validation warnings for
+	// third-party IAM-compatible providers where account ID can be non-AWS format.
 	AllowNonAWSAccountID bool
 
 	AccountID string
@@ -235,7 +235,7 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 		if err != nil {
 			klog.Errorf("Regex error: %v", err)
 		} else if !matched {
-			klog.Warningf("arn is invalid: %s", arn)
+			klog.Warningf("role ARN account ID format is invalid for current validation mode: %s", arn)
 		}
 		entry.RoleARN = arn
 	}
