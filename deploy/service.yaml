@@ -4,12 +4,16 @@ metadata:
   name: pod-identity-webhook
   namespace: default
   annotations:
-    prometheus.io/port: "443"
-    prometheus.io/scheme: "https"
+    prometheus.io/port: "9999"
+    prometheus.io/scheme: "http"
     prometheus.io/scrape: "true"
 spec:
   ports:
-  - port: 443
-    targetPort: 443
+    - name: webhook
+      port: 443
+      targetPort: 443
+    - name: metrics
+      port: 9999
+      targetPort: 9999
   selector:
     app: pod-identity-webhook
