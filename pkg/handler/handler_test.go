@@ -18,24 +18,25 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
-	mocks "github.com/aws/amazon-eks-pod-identity-webhook/pkg/mocks/math/rand"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"io"
 	"io/ioutil"
-	"k8s.io/apimachinery/pkg/types"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
 
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/containercredentials"
+	mocks "github.com/aws/amazon-eks-pod-identity-webhook/pkg/mocks/math/rand"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"k8s.io/apimachinery/pkg/types"
+
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
 	"k8s.io/api/admission/v1beta1"
 	authenticationv1 "k8s.io/api/authentication/v1"
-	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -195,6 +196,42 @@ func getAlwaysZeroRand(t *testing.T) *rand.Rand {
 	mockRand.Int63()
 
 	return mockRand
+}
+
+func TestAddEnvToContainerAddsEndpointWhenOtherEnvAlreadyPresent(t *testing.T) {
+	modifier := NewModifier(getAlwaysZeroRand(t), WithRegion("us-east-1"))
+	container := corev1.Container{
+		Name:  "app",
+		Image: "amazonlinux",
+		Env: []corev1.EnvVar{
+			{Name: "AWS_REGION", Value: "us-east-1"},
+			{Name: "AWS_STS_REGIONAL_ENDPOINTS", Value: "regional"},
+			{Name: "AWS_ROLE_ARN", Value: "arn:aws:iam::111122223333:role/s3-reader"},
+			{Name: "AWS_WEB_IDENTITY_TOKEN_FILE", Value: "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "aws-iam-token", MountPath: "/var/run/secrets/eks.amazonaws.com/serviceaccount", ReadOnly: true},
+		},
+	}
+	patchConfig := &podPatchConfig{
+		UseRegionalSTS:         true,
+		MountPath:              "/var/run/secrets/eks.amazonaws.com/serviceaccount",
+		VolumeName:             "aws-iam-token",
+		TokenPath:              "token",
+		EndpointUrl:            "https://sts.example.com",
+		WebIdentityPatchConfig: &webIdentityPatchConfig{RoleArn: "arn:aws:iam::111122223333:role/s3-reader"},
+	}
+
+	changed := modifier.addEnvToContainer(&container, "/var/run/secrets/eks.amazonaws.com/serviceaccount/token", patchConfig)
+
+	assert.True(t, changed)
+	assert.Equal(t, []corev1.EnvVar{
+		{Name: "AWS_REGION", Value: "us-east-1"},
+		{Name: "AWS_STS_REGIONAL_ENDPOINTS", Value: "regional"},
+		{Name: "AWS_ROLE_ARN", Value: "arn:aws:iam::111122223333:role/s3-reader"},
+		{Name: "AWS_WEB_IDENTITY_TOKEN_FILE", Value: "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"},
+		{Name: "AWS_ENDPOINT_URL", Value: "https://sts.example.com"},
+	}, container.Env)
 }
 
 func TestModifierHandler(t *testing.T) {
