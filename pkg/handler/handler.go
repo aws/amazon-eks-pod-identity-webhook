@@ -31,8 +31,8 @@ import (
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
-	"k8s.io/api/admission/v1beta1"
-	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
+	admissionv1 "k8s.io/api/admission/v1"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,7 +42,7 @@ import (
 
 func init() {
 	_ = corev1.AddToScheme(runtimeScheme)
-	_ = admissionregistrationv1beta1.AddToScheme(runtimeScheme)
+	_ = admissionregistrationv1.AddToScheme(runtimeScheme)
 }
 
 var (
@@ -517,8 +517,8 @@ func (m *Modifier) addJitterToDefaultToken(tokenExpiration int64) int64 {
 }
 
 // MutatePod takes a AdmissionReview, mutates the pod, and returns an AdmissionResponse
-func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResponse {
-	badRequest := &v1beta1.AdmissionResponse{
+func (m *Modifier) MutatePod(ar *admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
+	badRequest := &admissionv1.AdmissionResponse{
 		Result: &metav1.Status{
 			Message: "bad content",
 		},
@@ -535,7 +535,7 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
 		klog.Errorf("Could not unmarshal raw object: %v", err)
 		klog.Errorf("Object: %v", string(req.Object.Raw))
-		return &v1beta1.AdmissionResponse{
+		return &admissionv1.AdmissionResponse{
 			Result: &metav1.Status{
 				Message: err.Error(),
 			},
@@ -548,7 +548,7 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 	if patchConfig == nil {
 		klog.V(4).Infof("Pod was not mutated. Reason: "+
 			"Service account did not have the right annotations or was not found in the cache. %s", logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
-		return &v1beta1.AdmissionResponse{
+		return &admissionv1.AdmissionResponse{
 			Allowed: true,
 		}
 	}
@@ -557,7 +557,7 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 	patchBytes, err := json.Marshal(patch)
 	if err != nil {
 		klog.Errorf("Error marshaling pod update: %v", err.Error())
-		return &v1beta1.AdmissionResponse{
+		return &admissionv1.AdmissionResponse{
 			Result: &metav1.Status{
 				Message: err.Error(),
 			},
@@ -572,11 +572,11 @@ func (m *Modifier) MutatePod(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionResp
 			"Required volume mounts and env variables were already present. %s", logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
 	}
 
-	return &v1beta1.AdmissionResponse{
+	return &admissionv1.AdmissionResponse{
 		Allowed: true,
 		Patch:   patchBytes,
-		PatchType: func() *v1beta1.PatchType {
-			pt := v1beta1.PatchTypeJSONPatch
+		PatchType: func() *admissionv1.PatchType {
+			pt := admissionv1.PatchTypeJSONPatch
 			return &pt
 		}(),
 	}
@@ -599,11 +599,11 @@ func (m *Modifier) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var admissionResponse *v1beta1.AdmissionResponse
-	ar := v1beta1.AdmissionReview{}
+	var admissionResponse *admissionv1.AdmissionResponse
+	ar := admissionv1.AdmissionReview{}
 	if _, _, err := deserializer.Decode(body, nil, &ar); err != nil {
 		klog.Errorf("Can't decode body: %v", err)
-		admissionResponse = &v1beta1.AdmissionResponse{
+		admissionResponse = &admissionv1.AdmissionResponse{
 			Result: &metav1.Status{
 				Message: err.Error(),
 			},
@@ -612,7 +612,8 @@ func (m *Modifier) Handle(w http.ResponseWriter, r *http.Request) {
 		admissionResponse = m.MutatePod(&ar)
 	}
 
-	admissionReview := v1beta1.AdmissionReview{}
+	admissionReview := admissionv1.AdmissionReview{}
+	admissionReview.TypeMeta = ar.TypeMeta
 	if admissionResponse != nil {
 		admissionReview.Response = admissionResponse
 		if ar.Request != nil {
