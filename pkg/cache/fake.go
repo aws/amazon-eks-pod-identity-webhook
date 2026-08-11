@@ -2,9 +2,10 @@ package cache
 
 import (
 	"encoding/json"
-	v1 "k8s.io/api/core/v1"
 	"strconv"
 	"sync"
+
+	v1 "k8s.io/api/core/v1"
 
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 )
@@ -32,8 +33,9 @@ func NewFakeServiceAccountCache(accounts ...*v1.ServiceAccount) *FakeServiceAcco
 		if err != nil {
 			tokenExpiration = pkg.DefaultTokenExpiration // Otherwise default would be 0
 		}
+		endpointUrl, _ := sa.Annotations["eks.amazonaws.com/endpoint-url"]
 
-		c.Add(sa.Name, sa.Namespace, arn, audience, regionalSTS, tokenExpiration)
+		c.Add(sa.Name, sa.Namespace, arn, audience, regionalSTS, tokenExpiration, endpointUrl)
 	}
 	return c
 }
@@ -56,22 +58,23 @@ func (f *FakeServiceAccountCache) Get(req Request) Response {
 		Audience:        resp.Audience,
 		UseRegionalSTS:  resp.UseRegionalSTS,
 		TokenExpiration: resp.TokenExpiration,
+		EndpointUrl:     resp.EndpointUrl,
 		FoundInCache:    true,
 	}
 }
 
-func (f *FakeServiceAccountCache) GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64) {
+func (f *FakeServiceAccountCache) GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64, endpointUrl string) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	resp, ok := f.cache[namespace+"/"+name]
 	if !ok {
-		return false, pkg.DefaultTokenExpiration
+		return false, pkg.DefaultTokenExpiration, ""
 	}
-	return resp.UseRegionalSTS, resp.TokenExpiration
+	return resp.UseRegionalSTS, resp.TokenExpiration, resp.EndpointUrl
 }
 
 // Add adds a cache entry
-func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string, regionalSTS bool, tokenExpiration int64) {
+func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string, regionalSTS bool, tokenExpiration int64, endpointUrl string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cache[namespace+"/"+name] = &Entry{
@@ -79,6 +82,7 @@ func (f *FakeServiceAccountCache) Add(name, namespace, role, aud string, regiona
 		Audience:        aud,
 		UseRegionalSTS:  regionalSTS,
 		TokenExpiration: tokenExpiration,
+		EndpointUrl:     endpointUrl,
 	}
 }
 

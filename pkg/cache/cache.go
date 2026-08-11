@@ -45,6 +45,7 @@ type Entry struct {
 	Audience        string
 	UseRegionalSTS  bool
 	TokenExpiration int64
+	EndpointUrl     string
 }
 
 type Request struct {
@@ -62,6 +63,7 @@ type Response struct {
 	Audience        string
 	UseRegionalSTS  bool
 	TokenExpiration int64
+	EndpointUrl     string
 	FoundInCache    bool
 	Notifier        <-chan struct{}
 }
@@ -69,7 +71,7 @@ type Response struct {
 type ServiceAccountCache interface {
 	Start(stop chan struct{})
 	Get(request Request) Response
-	GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64)
+	GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64, endpointUrl string)
 	// ToJSON returns cache contents as JSON string
 	ToJSON() string
 	Clear()
@@ -86,12 +88,16 @@ type serviceAccountCache struct {
 	defaultRegionalSTS     bool
 	composeRoleArn         ComposeRoleArn
 	defaultTokenExpiration int64
+	defaultEndpointUrl     string
 	webhookUsage           prometheus.Gauge
 	notifications          *notifications
 }
 
 type ComposeRoleArn struct {
 	Enabled bool
+	// AllowNonAWSAccountID relaxes role ARN account ID validation warnings for
+	// third-party IAM-compatible providers where account ID can be non-AWS format.
+	AllowNonAWSAccountID bool
 
 	AccountID string
 	Partition string
@@ -132,6 +138,7 @@ func (c *serviceAccountCache) Get(req Request) Response {
 			result.Audience = entry.Audience
 			result.UseRegionalSTS = entry.UseRegionalSTS
 			result.TokenExpiration = entry.TokenExpiration
+			result.EndpointUrl = entry.EndpointUrl
 			return result
 		}
 	}
@@ -146,6 +153,7 @@ func (c *serviceAccountCache) Get(req Request) Response {
 			result.Audience = entry.Audience
 			result.UseRegionalSTS = entry.UseRegionalSTS
 			result.TokenExpiration = entry.TokenExpiration
+			result.EndpointUrl = entry.EndpointUrl
 			return result
 		}
 	}
@@ -156,13 +164,13 @@ func (c *serviceAccountCache) Get(req Request) Response {
 // GetCommonConfigurations returns the common configurations that also applies to the new mutation method(i.e Container Credentials).
 // The config file for the container credentials does not contain "TokenExpiration" or "UseRegionalSTS". For backward compatibility,
 // Use these fields if they are set in the sa annotations or config map.
-func (c *serviceAccountCache) GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64) {
+func (c *serviceAccountCache) GetCommonConfigurations(name, namespace string) (useRegionalSTS bool, tokenExpiration int64, endpointUrl string) {
 	if entry, _ := c.getSA(Request{Name: name, Namespace: namespace, RequestNotification: false}); entry != nil {
-		return entry.UseRegionalSTS, entry.TokenExpiration
+		return entry.UseRegionalSTS, entry.TokenExpiration, entry.EndpointUrl
 	} else if entry := c.getCM(name, namespace); entry != nil {
-		return entry.UseRegionalSTS, entry.TokenExpiration
+		return entry.UseRegionalSTS, entry.TokenExpiration, entry.EndpointUrl
 	}
-	return false, pkg.DefaultTokenExpiration
+	return false, pkg.DefaultTokenExpiration, ""
 }
 
 func (c *serviceAccountCache) getSA(req Request) (*Entry, <-chan struct{}) {
@@ -221,11 +229,13 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 			arn = fmt.Sprintf("arn:%s:iam::%s:role/%s", c.composeRoleArn.Partition, c.composeRoleArn.AccountID, arn)
 		}
 
-		matched, err := regexp.Match(`^arn:aws[a-z0-9-]*:iam::\d{12}:role\/[\w-\/.@+=,]+$`, []byte(arn))
+		accountIDPattern := roleARNAccountIDPattern(c.composeRoleArn.AllowNonAWSAccountID)
+
+		matched, err := regexp.Match(fmt.Sprintf(`^arn:aws[a-z0-9-]*:iam::%s:role\/[\w-\/.@+=,]+$`, accountIDPattern), []byte(arn))
 		if err != nil {
 			klog.Errorf("Regex error: %v", err)
 		} else if !matched {
-			klog.Warningf("arn is invalid: %s", arn)
+			klog.Warningf("role ARN account ID format is invalid for current validation mode: %s", arn)
 		}
 		entry.RoleARN = arn
 	}
@@ -253,9 +263,25 @@ func (c *serviceAccountCache) addSA(sa *v1.ServiceAccount) {
 			entry.TokenExpiration = pkg.ValidateMinTokenExpiration(tokenExpiration)
 		}
 	}
+
+	entry.EndpointUrl = c.defaultEndpointUrl
+	if endpointUrl, ok := sa.Annotations[c.annotationPrefix+"/"+pkg.EndpointUrlAnnotation]; ok {
+		entry.EndpointUrl = endpointUrl
+	}
+
 	c.webhookUsage.Set(1)
 
 	c.setSA(sa.Name, sa.Namespace, entry)
+}
+
+func roleARNAccountIDPattern(allowNonAWSAccountID bool) string {
+	if allowNonAWSAccountID {
+		// Allow standard AWS account IDs as well as common IAM-compatible formats:
+		// empty account ID, or a 20-character alphanumeric account ID.
+		return `(?:\d{12}|[A-Za-z0-9]{20}|)`
+	}
+
+	return `\d{12}`
 }
 
 func (c *serviceAccountCache) setSA(name, namespace string, entry *Entry) {
@@ -280,6 +306,7 @@ func New(defaultAudience,
 	prefix string,
 	defaultRegionalSTS bool,
 	defaultTokenExpiration int64,
+	defaultEndpointUrl string,
 	saInformer coreinformers.ServiceAccountInformer,
 	cmInformer coreinformers.ConfigMapInformer,
 	composeRoleArn ComposeRoleArn,
@@ -304,6 +331,7 @@ func New(defaultAudience,
 		defaultRegionalSTS:     defaultRegionalSTS,
 		composeRoleArn:         composeRoleArn,
 		defaultTokenExpiration: defaultTokenExpiration,
+		defaultEndpointUrl:     defaultEndpointUrl,
 		hasSynced:              hasSynced,
 		webhookUsage:           webhookUsage,
 		notifications:          newNotifications(saFetchRequests),
