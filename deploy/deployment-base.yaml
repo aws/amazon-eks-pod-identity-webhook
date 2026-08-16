@@ -26,6 +26,22 @@ spec:
         - --annotation-prefix=eks.amazonaws.com
         - --token-audience=sts.amazonaws.com
         - --logtostderr
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 443
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 443
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 2
         volumeMounts:
         - name: cert
           mountPath: "/etc/webhook/certs"
