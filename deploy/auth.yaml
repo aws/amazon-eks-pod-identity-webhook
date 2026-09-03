@@ -15,12 +15,6 @@ rules:
   resources:
   - secrets
   verbs:
-  - create
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
   - get
   - update
   - patch
