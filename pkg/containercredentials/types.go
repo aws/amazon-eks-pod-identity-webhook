@@ -20,6 +20,7 @@ type IdentityConfigObject struct {
 }
 
 type Identity struct {
-	Namespace      string `json:"namespace"`
-	ServiceAccount string `json:"serviceAccount"`
+	Namespace        string `json:"namespace"`
+	ServiceAccount   string `json:"serviceAccount"`
+	WorkloadIdentity bool   `json:"workloadIdentity,omitempty"`
 }

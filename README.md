@@ -194,6 +194,28 @@ account](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_en
 You can also enable this per-service account with the annotation
 `eks.amazonaws.com/sts-regional-endpoints` set to `"true"`.
 
+### Container credentials workload identity socket
+
+The container credentials configuration can optionally enable the workload identity socket for an identity:
+
+```json
+{
+  "identities": [
+    {
+      "namespace": "default",
+      "serviceAccount": "my-serviceaccount",
+      "workloadIdentity": true
+    }
+  ]
+}
+```
+
+`workloadIdentity` is optional and defaults to `false`, so existing configuration files continue to work unchanged. When it is `true`, the webhook adds `SPIFFE_ENDPOINT_SOCKET` and a read-only CSI volume for the fixed socket contract:
+
+```text
+unix:///var/run/secrets/pods.eks.amazonaws.com/workloadidentity/agent.sock
+```
+
 ### pod-identity-webhook ConfigMap
 
 The purpose of the `pod-identity-webhook` ConfigMap is to simplify the mapping of IAM roles and ServiceAccount
@@ -263,4 +285,3 @@ See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 ## License
 Apache 2.0 - Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 See [LICENSE](LICENSE)
-
