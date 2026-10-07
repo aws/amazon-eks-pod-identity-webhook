@@ -6,18 +6,19 @@ metadata:
     testing.eks.amazonaws.com/skip: "false"
     testing.eks.amazonaws.com/serviceAccount/roleArn: "arn:aws:iam::111122223333:role/s3-reader"
     testing.eks.amazonaws.com/serviceAccount/audience: "sts.amazonaws.com"
-    # The pod uses the reserved volume name for a hostPath volume. The webhook
-    # must not inject env or mounts that point at a token that does not exist.
+    # A projected service account token for a different audience uses the
+    # reserved volume name. It is not the webhook's token, so no mutation.
     testing.eks.amazonaws.com/expectedPatch: 'null'
 spec:
   containers:
   - image: amazonlinux
     name: balajilovesoreos
-    volumeMounts:
-      - name: aws-iam-token
-        path: /path/to/token
   serviceAccountName: default
   volumes:
-    - name: aws-iam-token
-      hostPath:
-        path: /path/to/token
+  - name: aws-iam-token
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: vault
+          expirationSeconds: 3600
+          path: token

@@ -307,8 +307,67 @@ func (m *Modifier) parsePodAnnotations(pod *corev1.Pod, serviceAccountTokenExpir
 	return tokenExpiration, containersToSkip
 }
 
+// findTokenVolume returns the pod volume that uses the reserved token volume
+// name, if any, and whether it is the projected service account token this
+// webhook injects (same audience and path). Any other volume source using the
+// name was declared by the user, and mounting it at the token path would break
+// credential resolution in every container.
+func findTokenVolume(pod *corev1.Pod, patchConfig *podPatchConfig) (*corev1.Volume, bool) {
+	for i := range pod.Spec.Volumes {
+		volume := &pod.Spec.Volumes[i]
+		if volume.Name != patchConfig.VolumeName {
+			continue
+		}
+		if volume.Projected == nil {
+			return volume, false
+		}
+		for _, source := range volume.Projected.Sources {
+			token := source.ServiceAccountToken
+			if token != nil && token.Audience == patchConfig.Audience && token.Path == patchConfig.TokenPath {
+				return volume, true
+			}
+		}
+		return volume, false
+	}
+	return nil, false
+}
+
+// volumeSourceType returns the name of the volume source that is set, for logging
+func volumeSourceType(source corev1.VolumeSource) string {
+	switch {
+	case source.HostPath != nil:
+		return "HostPath"
+	case source.EmptyDir != nil:
+		return "EmptyDir"
+	case source.Secret != nil:
+		return "Secret"
+	case source.ConfigMap != nil:
+		return "ConfigMap"
+	case source.PersistentVolumeClaim != nil:
+		return "PersistentVolumeClaim"
+	case source.Projected != nil:
+		return "Projected"
+	case source.DownwardAPI != nil:
+		return "DownwardAPI"
+	case source.CSI != nil:
+		return "CSI"
+	case source.NFS != nil:
+		return "NFS"
+	default:
+		return "other"
+	}
+}
+
 // getPodSpecPatch gets the patch operation to be applied to the given Pod
 func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig) ([]patchOperation, bool) {
+	tokenVolume, tokenVolumeInjected := findTokenVolume(pod, patchConfig)
+	if tokenVolume != nil && !tokenVolumeInjected {
+		klog.Warningf("Pod was not mutated. Reason: volume %q is reserved for the projected service account token, "+
+			"but the pod declares a %s volume with that name. %s", patchConfig.VolumeName,
+			volumeSourceType(tokenVolume.VolumeSource), logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
+		return nil, false
+	}
+
 	tokenFilePath := filepath.Join(patchConfig.MountPath, patchConfig.TokenPath)
 
 	betaNodeSelector, _ := pod.Spec.NodeSelector["beta.kubernetes.io/os"]
@@ -383,15 +442,8 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 		changed = true
 	}
 
-	// skip adding volume if it already exists
-	volExists := false
-	for _, vol := range pod.Spec.Volumes {
-		if vol.Name == patchConfig.VolumeName {
-			volExists = true
-		}
-	}
-
-	if !volExists {
+	// skip adding volume if it was already injected
+	if tokenVolume == nil {
 		volPatch := patchOperation{
 			Op:    "add",
 			Path:  "/spec/volumes/0",
@@ -554,6 +606,11 @@ func (m *Modifier) MutatePod(ar *admissionv1.AdmissionReview) *admissionv1.Admis
 	}
 
 	patch, changed := m.getPodSpecPatch(&pod, patchConfig)
+	if patch == nil {
+		return &admissionv1.AdmissionResponse{
+			Allowed: true,
+		}
+	}
 	patchBytes, err := json.Marshal(patch)
 	if err != nil {
 		klog.Errorf("Error marshaling pod update: %v", err.Error())
