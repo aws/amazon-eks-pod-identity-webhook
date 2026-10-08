@@ -80,9 +80,11 @@ func main() {
 	mountPath := flag.String("token-mount-path", "/var/run/secrets/eks.amazonaws.com/serviceaccount", "The path to mount tokens")
 	tokenExpiration := flag.Int64("token-expiration", pkg.DefaultTokenExpiration, "The token expiration")
 	region := flag.String("aws-default-region", "", "If set, AWS_DEFAULT_REGION and AWS_REGION will be set to this value in mutated containers")
+	endpointUrl := flag.String("endpoint-url", "", "If set, AWS_ENDPOINT_URL will be set to this value in mutated containers")
 	regionalSTS := flag.Bool("sts-regional-endpoint", false, "Whether to inject the AWS_STS_REGIONAL_ENDPOINTS=regional env var in mutated pods. Defaults to `false`.")
 	watchConfigMap := flag.Bool("watch-config-map", false, "Enables watching serviceaccounts that are configured through the pod-identity-webhook configmap instead of using annotations")
 	composeRoleArn := flag.Bool("compose-role-arn", false, "If true, then the role name and path can be used instead of the fully qualified ARN in the `role-arn` annotation.  In this case, webhook will look up the partition and account ID using instance metadata.  Defaults to `false`.")
+	allowNonAWSAccountID := flag.Bool("allow-non-aws-account-id", false, "If true, relax role ARN account ID validation warnings for non-AWS IAM-compatible providers (including empty account ID and 20-character alphanumeric account ID). Defaults to `false`.")
 	watchContainerCredentialsConfig := flag.String("watch-container-credentials-config", "", "Absolute path to the container credential config file to watch for")
 	containerCredentialsAudience := flag.String("container-credentials-audience", "pods.eks.amazonaws.com", "The audience for tokens used by the AWS Container Credentials method")
 	containerCredentialsMountPath := flag.String("container-credentials-token-mount-path", "/var/run/secrets/pods.eks.amazonaws.com/serviceaccount", "The path to mount tokens used by the AWS Container Credentials method")
@@ -176,7 +178,8 @@ func main() {
 		}
 
 		composeRoleArnCache = cache.ComposeRoleArn{
-			Enabled: true,
+			Enabled:              true,
+			AllowNonAWSAccountID: *allowNonAWSAccountID,
 
 			AccountID: identity.AccountID,
 			Partition: partition,
@@ -184,12 +187,14 @@ func main() {
 		}
 
 	}
+	composeRoleArnCache.AllowNonAWSAccountID = *allowNonAWSAccountID
 
 	saCache := cache.New(
 		*audience,
 		*annotationPrefix,
 		*regionalSTS,
 		*tokenExpiration,
+		*endpointUrl,
 		saInformer,
 		cmInformer,
 		composeRoleArnCache,
@@ -226,6 +231,7 @@ func main() {
 		handler.WithServiceAccountCache(saCache),
 		handler.WithContainerCredentialsConfig(containerCredentialsConfig),
 		handler.WithRegion(*region),
+		handler.WithEndpointUrl(*endpointUrl),
 		handler.WithSALookupGraceTime(*saLookupGracePeriod),
 	)
 
