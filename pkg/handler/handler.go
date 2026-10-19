@@ -134,7 +134,7 @@ type podPatchConfig struct {
 	TokenPath                       string
 	WebIdentityPatchConfig          *webIdentityPatchConfig
 	ContainerCredentialsPatchConfig *containercredentials.PatchConfig
-	WorkloadIdentity                bool
+	WorkloadIdentityEnabled         bool
 }
 
 type webIdentityPatchConfig struct {
@@ -210,7 +210,7 @@ func (m *Modifier) addEnvToContainer(container *corev1.Container, tokenFilePath 
 		}
 	}
 
-	workloadIdentityChanged := addWorkloadIdentityToContainer(container, patchConfig.WorkloadIdentity)
+	workloadIdentityChanged := addWorkloadIdentityToContainer(container, patchConfig.WorkloadIdentityEnabled)
 	if ((patchConfig.WebIdentityPatchConfig != nil && webIdentityKeysDefined) ||
 		(patchConfig.ContainerCredentialsPatchConfig != nil && containerCredentialsKeysDefined)) &&
 		regionKeyDefined && regionalStsKeyDefined && !workloadIdentityChanged {
@@ -322,7 +322,7 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 		tokenFilePath = "C:" + strings.Replace(tokenFilePath, `/`, `\`, -1)
 
 		// Workload identity socket injection is not yet supported for Windows pods.
-		patchConfig.WorkloadIdentity = false
+		patchConfig.WorkloadIdentityEnabled = false
 	}
 
 	var changed bool
@@ -417,7 +417,7 @@ func (m *Modifier) getPodSpecPatch(pod *corev1.Pod, patchConfig *podPatchConfig)
 		changed = true
 	}
 
-	if operation, ok := workloadIdentityPodVolumePatch(pod.Spec.Volumes, patchConfig.WorkloadIdentity); ok {
+	if operation, ok := workloadIdentityPodVolumePatch(pod.Spec.Volumes, patchConfig.WorkloadIdentityEnabled); ok {
 		patch = append(patch, operation)
 		changed = true
 	}
@@ -467,7 +467,7 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 			TokenPath:                       containerCredentialsPatchConfig.TokenPath,
 			WebIdentityPatchConfig:          nil,
 			ContainerCredentialsPatchConfig: containerCredentialsPatchConfig,
-			WorkloadIdentity:                containerCredentialsPatchConfig.WorkloadIdentity,
+			WorkloadIdentityEnabled:         containerCredentialsPatchConfig.WorkloadIdentityEnabled,
 		}
 	}
 

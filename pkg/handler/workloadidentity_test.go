@@ -258,9 +258,9 @@ func newWorkloadIdentityModifier(t *testing.T, enabled bool) *Modifier {
 			FullUri:    "http://169.254.170.23/v1/credentials",
 			Identities: map[containercredentials.Identity]bool{
 				{
-					Namespace:        "default",
-					ServiceAccount:   "default",
-					WorkloadIdentity: enabled,
+					Namespace:               "default",
+					ServiceAccount:          "default",
+					WorkloadIdentityEnabled: enabled,
 				}: true,
 			},
 		}),

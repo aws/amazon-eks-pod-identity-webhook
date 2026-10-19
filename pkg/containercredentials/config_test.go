@@ -131,7 +131,7 @@ func TestFileConfig_Get(t *testing.T) {
 	assert.NotNil(t, patchConfig)
 	assert.Equal(t, audience, patchConfig.Audience)
 	assert.Equal(t, fullUri, patchConfig.FullUri)
-	assert.False(t, patchConfig.WorkloadIdentity)
+	assert.False(t, patchConfig.WorkloadIdentityEnabled)
 
 	patchConfig = fileConfig.Get("non-existent", "non-existent")
 	assert.Nil(t, patchConfig)
@@ -141,9 +141,9 @@ func TestFileConfig_WorkloadIdentity(t *testing.T) {
 	configObject := &IdentityConfigObject{
 		Identities: []Identity{
 			{
-				Namespace:        namespaceFoo,
-				ServiceAccount:   namespaceFooServiceAccount,
-				WorkloadIdentity: true,
+				Namespace:               namespaceFoo,
+				ServiceAccount:          namespaceFooServiceAccount,
+				WorkloadIdentityEnabled: true,
 			},
 			{
 				Namespace:      namespaceBar,
@@ -156,11 +156,11 @@ func TestFileConfig_WorkloadIdentity(t *testing.T) {
 
 	workloadPatch := fileConfig.Get(namespaceFoo, namespaceFooServiceAccount)
 	assert.NotNil(t, workloadPatch)
-	assert.True(t, workloadPatch.WorkloadIdentity)
+	assert.True(t, workloadPatch.WorkloadIdentityEnabled)
 
 	legacyPatch := fileConfig.Get(namespaceBar, namespaceBarServiceAccount)
 	assert.NotNil(t, legacyPatch)
-	assert.False(t, legacyPatch.WorkloadIdentity)
+	assert.False(t, legacyPatch.WorkloadIdentityEnabled)
 }
 
 func defaultConfigObject() *IdentityConfigObject {
