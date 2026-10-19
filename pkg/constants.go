@@ -27,4 +27,12 @@ const (
 	// AWS SDK defined environment variables.
 	AwsEnvVarContainerCredentialsFullUri     = "AWS_CONTAINER_CREDENTIALS_FULL_URI"
 	AwsEnvVarContainerAuthorizationTokenFile = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"
+
+	// SPIFFE SDK environment variable for the workload API socket.
+	SpiffeEnvVarEndpointSocket = "SPIFFE_ENDPOINT_SOCKET"
+
+	WorkloadIdentitySocketPath       = "/var/run/secrets/pods.eks.amazonaws.com/workloadidentity/agent.sock"
+	WorkloadIdentitySocketMountPath  = "/var/run/secrets/pods.eks.amazonaws.com/workloadidentity"
+	WorkloadIdentitySocketVolumeName = "eks-workload-identity-socket"
+	WorkloadIdentityCSIDriver        = "spiffe.csi.eks.amazonaws.com"
 )
