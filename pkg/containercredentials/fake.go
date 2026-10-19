@@ -32,12 +32,12 @@ func (f *FakeConfig) Get(namespace string, serviceAccount string) *PatchConfig {
 	for identity := range f.Identities {
 		if identity.Namespace == namespace && identity.ServiceAccount == serviceAccount {
 			return &PatchConfig{
-				Audience:         f.Audience,
-				MountPath:        f.MountPath,
-				VolumeName:       f.VolumeName,
-				TokenPath:        f.TokenPath,
-				FullUri:          f.FullUri,
-				WorkloadIdentity: identity.WorkloadIdentity,
+				Audience:                f.Audience,
+				MountPath:               f.MountPath,
+				VolumeName:              f.VolumeName,
+				TokenPath:               f.TokenPath,
+				FullUri:                 f.FullUri,
+				WorkloadIdentityEnabled: identity.WorkloadIdentityEnabled,
 			}
 		}
 	}

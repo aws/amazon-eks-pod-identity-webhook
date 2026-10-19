@@ -204,13 +204,13 @@ The container credentials configuration can optionally enable the workload ident
     {
       "namespace": "default",
       "serviceAccount": "my-serviceaccount",
-      "workloadIdentity": true
+      "workloadIdentityEnabled": true
     }
   ]
 }
 ```
 
-`workloadIdentity` is optional and defaults to `false`, so existing configuration files continue to work unchanged. When it is `true`, the webhook adds `SPIFFE_ENDPOINT_SOCKET` and a read-only CSI volume for the fixed socket contract:
+`workloadIdentityEnabled` is optional and defaults to `false`, so existing configuration files continue to work unchanged. When it is `true`, the webhook adds `SPIFFE_ENDPOINT_SOCKET` and a read-only CSI volume for the fixed socket contract:
 
 ```text
 unix:///var/run/secrets/pods.eks.amazonaws.com/workloadidentity/agent.sock

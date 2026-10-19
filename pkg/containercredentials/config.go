@@ -42,12 +42,12 @@ type FileConfig struct {
 }
 
 type PatchConfig struct {
-	Audience         string
-	MountPath        string
-	VolumeName       string
-	TokenPath        string
-	FullUri          string
-	WorkloadIdentity bool
+	Audience                string
+	MountPath               string
+	VolumeName              string
+	TokenPath               string
+	FullUri                 string
+	WorkloadIdentityEnabled bool
 }
 
 func NewFileConfig(audience, mountPath, volumeName, tokenPath, fullUri string) *FileConfig {
@@ -93,7 +93,7 @@ func (f *FileConfig) Load(content []byte) error {
 			Namespace:      item.Namespace,
 			ServiceAccount: item.ServiceAccount,
 		}
-		newCache[key] = item.WorkloadIdentity
+		newCache[key] = item.WorkloadIdentityEnabled
 	}
 	f.identityConfigObject = &configObject
 	f.cache = newCache
@@ -107,15 +107,15 @@ func (f *FileConfig) Get(namespace string, serviceAccount string) *PatchConfig {
 		Namespace:      namespace,
 		ServiceAccount: serviceAccount,
 	}
-	workloadIdentity, ok := f.getCacheItem(key)
+	workloadIdentityEnabled, ok := f.getCacheItem(key)
 	if ok {
 		return &PatchConfig{
-			Audience:         f.audience,
-			MountPath:        f.mountPath,
-			VolumeName:       f.volumeName,
-			TokenPath:        f.tokenPath,
-			FullUri:          f.fullUri,
-			WorkloadIdentity: workloadIdentity,
+			Audience:                f.audience,
+			MountPath:               f.mountPath,
+			VolumeName:              f.volumeName,
+			TokenPath:               f.tokenPath,
+			FullUri:                 f.fullUri,
+			WorkloadIdentityEnabled: workloadIdentityEnabled,
 		}
 	}
 
