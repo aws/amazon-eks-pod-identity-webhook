@@ -77,6 +77,11 @@ func TestMutatePod(t *testing.T) {
 			getValidReview(rawPodWithoutVolume),
 			getValidHandlerResponse(""),
 		},
+		{
+			"ReservedVolumeNameUsedByAnotherVolume",
+			getValidReview(rawPodWithForeignTokenVolume),
+			&admissionv1.AdmissionResponse{Allowed: true},
+		},
 	}
 
 	for _, c := range cases {
@@ -138,6 +143,32 @@ var rawPodWithoutVolume = []byte(`
          }
        ],
        "serviceAccountName": "default"
+  }
+}
+`)
+
+var rawPodWithForeignTokenVolume = []byte(`
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+       "name": "balajilovesoreos",
+       "uid": "be8695c4-4ad0-4038-8786-c508853aa255"
+  },
+  "spec": {
+       "containers": [
+         {
+               "image": "amazonlinux",
+               "name": "balajilovesoreos"
+         }
+       ],
+       "serviceAccountName": "default",
+       "volumes": [
+         {
+               "name": "aws-iam-token",
+               "emptyDir": {}
+         }
+       ]
   }
 }
 `)
@@ -315,6 +346,48 @@ func TestModifierHandler(t *testing.T) {
 					string(c.want),
 				)
 			}
+		})
+	}
+}
+
+func TestFindTokenVolume(t *testing.T) {
+	patchConfig := &podPatchConfig{
+		VolumeName: "aws-iam-token",
+		Audience:   "sts.amazonaws.com",
+		TokenPath:  "token",
+	}
+	projected := func(audience, path string) corev1.VolumeSource {
+		return corev1.VolumeSource{
+			Projected: &corev1.ProjectedVolumeSource{
+				Sources: []corev1.VolumeProjection{
+					{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{Audience: audience, Path: path}},
+				},
+			},
+		}
+	}
+
+	cases := []struct {
+		caseName     string
+		volumes      []corev1.Volume
+		wantExists   bool
+		wantInjected bool
+	}{
+		{"NoVolumes", nil, false, false},
+		{"OtherName", []corev1.Volume{{Name: "data", VolumeSource: projected("sts.amazonaws.com", "token")}}, false, false},
+		{"HostPath", []corev1.Volume{{Name: "aws-iam-token", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/tmp"}}}}, true, false},
+		{"EmptyDir", []corev1.Volume{{Name: "aws-iam-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}, true, false},
+		{"ProjectedWithoutToken", []corev1.Volume{{Name: "aws-iam-token", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{Sources: []corev1.VolumeProjection{{ConfigMap: &corev1.ConfigMapProjection{}}}}}}}, true, false},
+		{"ProjectedOtherAudience", []corev1.Volume{{Name: "aws-iam-token", VolumeSource: projected("vault", "token")}}, true, false},
+		{"ProjectedOtherPath", []corev1.Volume{{Name: "aws-iam-token", VolumeSource: projected("sts.amazonaws.com", "jwt")}}, true, false},
+		{"Injected", []corev1.Volume{{Name: "aws-iam-token", VolumeSource: projected("sts.amazonaws.com", "token")}}, true, true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.caseName, func(t *testing.T) {
+			pod := &corev1.Pod{Spec: corev1.PodSpec{Volumes: c.volumes}}
+			volume, injected := findTokenVolume(pod, patchConfig)
+			assert.Equal(t, c.wantExists, volume != nil)
+			assert.Equal(t, c.wantInjected, injected)
 		})
 	}
 }
