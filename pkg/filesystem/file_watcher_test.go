@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -163,6 +164,54 @@ func TestFileWatch_RetryOnHandlerError(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return processedContent == validContent
 	}, defaultTimeout, defaultPollInterval)
+}
+
+// TestFileWatch_WatchRegisteredBeforeInitialLoad verifies that the directory
+// watch is in place before the initial load runs. The handler creates the file
+// during the initial (missing file) load, simulating a file that is created
+// right after the initial read. That file must still be picked up via an event.
+func TestFileWatch_WatchRegisteredBeforeInitialLoad(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	dirPath, err := os.MkdirTemp("", "")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dirPath)
+
+	filePath := filepath.Join(dirPath, "file")
+
+	var (
+		mu                   sync.Mutex
+		fileWatcher          *FileWatcher
+		calls                int
+		watchedOnInitialLoad bool
+		processedContent     string
+	)
+	handler := func(content []byte) error {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		if calls == 1 {
+			watchedOnInitialLoad = len(fileWatcher.watcher.WatchList()) > 0
+			writeFile(t, filePath, "created after initial load")
+		}
+		processedContent = string(content)
+		return nil
+	}
+
+	fileWatcher = NewFileWatcher("testing", filePath, handler)
+	err = fileWatcher.Watch(ctx)
+	assert.NoError(t, err)
+
+	assert.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return processedContent == "created after initial load"
+	}, defaultTimeout, defaultPollInterval)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.True(t, watchedOnInitialLoad, "directory watch must be registered before the initial load")
 }
 
 func writeFile(t *testing.T, filePath string, content string) {
