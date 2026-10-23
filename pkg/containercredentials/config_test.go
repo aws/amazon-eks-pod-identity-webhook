@@ -192,6 +192,8 @@ func defaultConfigObjectBytesFor(configObject *IdentityConfigObject) []byte {
 
 func verifyConfigObject(t *testing.T, fileConfig *FileConfig, expected *IdentityConfigObject) {
 	assert.Eventually(t, func() bool {
+		fileConfig.mu.RLock()
+		defer fileConfig.mu.RUnlock()
 		return reflect.DeepEqual(fileConfig.identityConfigObject, expected)
 	}, defaultTimeout, defaultPollInterval)
 }

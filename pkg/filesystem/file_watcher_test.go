@@ -27,12 +27,21 @@ import (
 )
 
 type fileContentRecorder struct {
+	mu      sync.Mutex
 	content string
 }
 
 func (f *fileContentRecorder) record(content []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.content = string(content)
 	return nil
+}
+
+func (f *fileContentRecorder) getContent() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.content
 }
 
 const defaultTimeout = 10 * time.Second
@@ -122,18 +131,21 @@ func TestFileWatcher(t *testing.T) {
 
 			tc.postWatchFileFunc(t, filePath)
 			assert.Eventually(t, func() bool {
-				return tc.expectedContent == recorder.content
+				return tc.expectedContent == recorder.getContent()
 			}, defaultTimeout, defaultPollInterval)
 		})
 	}
 }
 
 func TestFileWatch_RetryOnHandlerError(t *testing.T) {
+	var mu sync.Mutex
 	errCount := 0
 	processedContent := ""
 	validContent := "Valid content"
 	invalidContent := "Invalid content"
 	handler := func(content []byte) error {
+		mu.Lock()
+		defer mu.Unlock()
 		if string(content) == invalidContent {
 			errCount += 1
 			return fmt.Errorf("content is malformed")
@@ -157,11 +169,15 @@ func TestFileWatch_RetryOnHandlerError(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
 		return errCount > 1 && processedContent == ""
 	}, defaultTimeout, defaultPollInterval)
 
 	writeFile(t, filePath, validContent)
 	assert.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
 		return processedContent == validContent
 	}, defaultTimeout, defaultPollInterval)
 }

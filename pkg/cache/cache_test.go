@@ -319,7 +319,10 @@ func TestNonRegionalSTS(t *testing.T) {
 			}
 
 			err = wait.ExponentialBackoff(wait.Backoff{Duration: 10 * time.Millisecond, Factor: 1.0, Steps: 3}, func() (bool, error) {
-				return len(cache.(*serviceAccountCache).saCache) != 0, nil
+				saCache := cache.(*serviceAccountCache)
+				saCache.mu.RLock()
+				defer saCache.mu.RUnlock()
+				return len(saCache.saCache) != 0, nil
 			})
 			if err != nil {
 				t.Fatalf("cache never called addSA: %v", err)
