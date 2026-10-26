@@ -18,13 +18,14 @@ package filesystem
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"time"
+
 	"github.com/fsnotify/fsnotify"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-	"os"
-	"path/filepath"
-	"time"
 )
 
 const (
@@ -67,16 +68,19 @@ func NewFileWatcher(purpose string, path string, handler FileContentHandler) *Fi
 // Watch sets up the fsnotify watcher and add the file that we are interested in.  The file watcher
 // and worker run in goroutines.  The goroutines are stopped when the ctx is cancelled.
 func (f *FileWatcher) Watch(ctx context.Context) error {
-	// Trigger initial file load
-	f.queue.Add(workItemKey)
-
 	var err error
 	f.watcher, err = fsnotify.NewWatcher()
 	if err != nil {
 		return err
 	}
 
-	go wait.UntilWithContext(ctx, f.runWorker, workerPollInterval)
+	// Register the directory watch before the initial load so that a file
+	// created after the initial read always produces an event.
+	dir := filepath.Dir(f.path)
+	err = f.watcher.Add(dir)
+	if err != nil {
+		klog.Fatal(err)
+	}
 
 	// Start listening for events.
 	go func() {
@@ -95,11 +99,10 @@ func (f *FileWatcher) Watch(ctx context.Context) error {
 		}
 	}()
 
-	dir := filepath.Dir(f.path)
-	err = f.watcher.Add(dir)
-	if err != nil {
-		klog.Fatal(err)
-	}
+	go wait.UntilWithContext(ctx, f.runWorker, workerPollInterval)
+
+	// Trigger initial file load
+	f.queue.Add(workItemKey)
 
 	return nil
 }
