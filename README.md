@@ -104,9 +104,9 @@ certificates API.
           value: "regional"
         volumeMounts:
         - mountPath: "/var/run/secrets/eks.amazonaws.com/serviceaccount/"
-          name: aws-token
+          name: aws-iam-token
       volumes:
-      - name: aws-token
+      - name: aws-iam-token
         projected:
           sources:
           - serviceAccountToken:
@@ -114,6 +114,9 @@ certificates API.
               expirationSeconds: 86400
               path: token
     ```
+   The volume name `aws-iam-token` is reserved by the webhook. A pod that already
+   declares a volume with that name which is not the projected service account
+   token shown above is left unmodified, and the webhook logs a warning.
 
 ### Usage with Windows container workloads
 

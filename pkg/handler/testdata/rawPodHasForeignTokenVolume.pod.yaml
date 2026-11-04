@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: balajilovesoreos
+  annotations:
+    testing.eks.amazonaws.com/skip: "false"
+    testing.eks.amazonaws.com/serviceAccount/roleArn: "arn:aws:iam::111122223333:role/s3-reader"
+    testing.eks.amazonaws.com/serviceAccount/audience: "sts.amazonaws.com"
+    # A projected service account token for a different audience uses the
+    # reserved volume name. It is not the webhook's token, so no mutation.
+    testing.eks.amazonaws.com/expectedPatch: 'null'
+spec:
+  containers:
+  - image: amazonlinux
+    name: balajilovesoreos
+  serviceAccountName: default
+  volumes:
+  - name: aws-iam-token
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: vault
+          expirationSeconds: 3600
+          path: token

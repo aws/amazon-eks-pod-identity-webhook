@@ -6,7 +6,9 @@ metadata:
     testing.eks.amazonaws.com/skip: "false"
     testing.eks.amazonaws.com/serviceAccount/roleArn: "arn:aws:iam::111122223333:role/s3-reader"
     testing.eks.amazonaws.com/serviceAccount/audience: "sts.amazonaws.com"
-    testing.eks.amazonaws.com/expectedPatch: '[{"op":"add","path":"/spec/containers","value":[{"name":"balajilovesoreos","image":"amazonlinux","env":[{"name":"AWS_ROLE_ARN","value":"arn:aws:iam::111122223333:role/s3-reader"},{"name":"AWS_WEB_IDENTITY_TOKEN_FILE","value":"/var/run/secrets/eks.amazonaws.com/serviceaccount/token"}],"resources":{},"volumeMounts":[{"name":"aws-iam-token","mountPath":""}]}]}]'
+    # The pod uses the reserved volume name for a hostPath volume. The webhook
+    # must not inject env or mounts that point at a token that does not exist.
+    testing.eks.amazonaws.com/expectedPatch: 'null'
 spec:
   containers:
   - image: amazonlinux
