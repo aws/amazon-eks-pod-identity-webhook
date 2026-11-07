@@ -26,6 +26,10 @@ spec:
         - --annotation-prefix=eks.amazonaws.com
         - --token-audience=sts.amazonaws.com
         - --logtostderr
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 10
         volumeMounts:
         - name: cert
           mountPath: "/etc/webhook/certs"
