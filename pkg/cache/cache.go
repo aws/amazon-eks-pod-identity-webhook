@@ -410,6 +410,11 @@ func (c *serviceAccountCache) populateCacheFromCM(oldCM, newCM *v1.ConfigMap) er
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal new config %q: %v", newConfig, err)
 	}
+	for key := range sas {
+		if len(strings.Split(key, "/")) != 2 {
+			return fmt.Errorf("invalid key %q in config, expected <namespace>/<serviceaccount>", key)
+		}
+	}
 	for key, entry := range sas {
 		parts := strings.Split(key, "/")
 		if entry.TokenExpiration == 0 {
@@ -428,6 +433,9 @@ func (c *serviceAccountCache) populateCacheFromCM(oldCM, newCM *v1.ConfigMap) er
 		for key := range oldCache {
 			if _, found := sas[key]; !found {
 				parts := strings.Split(key, "/")
+				if len(parts) != 2 {
+					continue
+				}
 				c.popCM(parts[1], parts[0])
 			}
 		}

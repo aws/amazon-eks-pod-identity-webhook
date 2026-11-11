@@ -407,6 +407,42 @@ func TestPopulateCacheFromCM(t *testing.T) {
 
 }
 
+func TestPopulateCacheFromCMInvalidKey(t *testing.T) {
+	newCM := func(config string) *v1.ConfigMap {
+		return &v1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "pod-identity-webhook"},
+			Data:       map[string]string{"config": config},
+		}
+	}
+	valid := newCM(`{"myns/mysa":{"RoleARN":"arn:aws:iam::111122223333:role/s3-reader"}}`)
+
+	for name, config := range map[string]string{
+		"no separator":       `{"mysa":{"RoleARN":"arn:aws:iam::111122223333:role/s3-reader"}}`,
+		"empty key":          `{"":{"RoleARN":"arn:aws:iam::111122223333:role/s3-reader"}}`,
+		"too many separator": `{"a/b/c":{"RoleARN":"arn:aws:iam::111122223333:role/s3-reader"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := serviceAccountCache{
+				cmCache:       make(map[string]*Entry),
+				notifications: newNotifications(make(chan *Request, 10)),
+			}
+
+			// An invalid key in the new config is reported as an error and must not panic.
+			assert.NotPanics(t, func() {
+				assert.Error(t, c.populateCacheFromCM(nil, newCM(config)))
+			})
+			assert.Empty(t, c.cmCache)
+
+			// An invalid key in the old config is ignored when the new config replaces it.
+			assert.NoError(t, c.populateCacheFromCM(nil, valid))
+			assert.NotPanics(t, func() {
+				assert.NoError(t, c.populateCacheFromCM(newCM(config), valid))
+			})
+			assert.NotEmpty(t, c.Get(Request{Name: "mysa", Namespace: "myns"}).RoleARN)
+		})
+	}
+}
+
 func TestPopulateCacheFromCMWithWildcard(t *testing.T) {
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
