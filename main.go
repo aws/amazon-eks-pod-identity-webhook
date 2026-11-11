@@ -98,6 +98,8 @@ func main() {
 
 	resyncPeriod := flag.Duration("resync-period", 60*time.Second, "The period to resync the SA informer cache, in seconds.")
 
+	workloadIdentityRequireCSIDriver := flag.Bool("workload-identity-require-csi-driver", true, "Skip workload identity socket injection, and warn the client, when the "+pkg.WorkloadIdentityCSIDriver+" CSIDriver is not installed in the cluster. Needs get/list/watch on storage.k8s.io csidrivers; without it, the socket is injected as if this flag were off.")
+
 	klog.InitFlags(goflag.CommandLine)
 	// Add klog CommandLine flags to pflag CommandLine
 	goflag.CommandLine.VisitAll(func(f *goflag.Flag) {
@@ -146,6 +148,12 @@ func main() {
 	// clusters by dropping labels, managedFields, ownerReferences, finalizers,
 	// secrets, imagePullSecrets, and unrelated annotations.
 	saInformer.Informer().SetTransform(stripDownServiceAccount(*annotationPrefix))
+
+	// Must be created before informerFactory.Start so the factory starts it.
+	var csiDriverChecker handler.CSIDriverChecker
+	if *workloadIdentityRequireCSIDriver {
+		csiDriverChecker = handler.NewCSIDriverChecker(informerFactory.Storage().V1().CSIDrivers())
+	}
 
 	*tokenExpiration = pkg.ValidateMinTokenExpiration(*tokenExpiration)
 
@@ -227,6 +235,7 @@ func main() {
 		handler.WithContainerCredentialsConfig(containerCredentialsConfig),
 		handler.WithRegion(*region),
 		handler.WithSALookupGraceTime(*saLookupGracePeriod),
+		handler.WithCSIDriverChecker(csiDriverChecker),
 	)
 
 	addr := fmt.Sprintf(":%d", *port)

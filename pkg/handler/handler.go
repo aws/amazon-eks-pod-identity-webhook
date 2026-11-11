@@ -85,6 +85,14 @@ func WithSALookupGraceTime(saLookupGraceTime time.Duration) ModifierOpt {
 
 }
 
+// WithCSIDriverChecker makes the modifier skip workload identity socket
+// injection when the workload identity CSIDriver is known to be absent from
+// the cluster. Without a checker, the socket is injected whenever the
+// association enables workload identity.
+func WithCSIDriverChecker(c CSIDriverChecker) ModifierOpt {
+	return func(m *Modifier) { m.csiDriverChecker = c }
+}
+
 // NewModifier returns a Modifier with default values
 func NewModifier(random *rand.Rand, opts ...ModifierOpt) *Modifier {
 	if random == nil {
@@ -116,6 +124,7 @@ type Modifier struct {
 	tokenName                  string
 	saLookupGraceTime          time.Duration
 	rand                       rand.Rand
+	csiDriverChecker           CSIDriverChecker
 }
 
 type patchOperation struct {
@@ -135,6 +144,8 @@ type podPatchConfig struct {
 	WebIdentityPatchConfig          *webIdentityPatchConfig
 	ContainerCredentialsPatchConfig *containercredentials.PatchConfig
 	WorkloadIdentityEnabled         bool
+	// Warnings are returned to the API client in the admission response.
+	Warnings []string
 }
 
 type webIdentityPatchConfig struct {
@@ -457,6 +468,8 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 		tokenExpiration = m.addJitterToDefaultToken(tokenExpiration)
 		webhookPodCount.WithLabelValues("container_credentials").Inc()
 
+		workloadIdentityEnabled, warnings := m.resolveWorkloadIdentity(pod, containerCredentialsPatchConfig.WorkloadIdentityEnabled)
+
 		return &podPatchConfig{
 			ContainersToSkip:                containersToSkip,
 			TokenExpiration:                 tokenExpiration,
@@ -467,7 +480,8 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 			TokenPath:                       containerCredentialsPatchConfig.TokenPath,
 			WebIdentityPatchConfig:          nil,
 			ContainerCredentialsPatchConfig: containerCredentialsPatchConfig,
-			WorkloadIdentityEnabled:         containerCredentialsPatchConfig.WorkloadIdentityEnabled,
+			WorkloadIdentityEnabled:         workloadIdentityEnabled,
+			Warnings:                        warnings,
 		}
 	}
 
@@ -584,8 +598,9 @@ func (m *Modifier) MutatePod(ar *admissionv1.AdmissionReview) *admissionv1.Admis
 	}
 
 	return &admissionv1.AdmissionResponse{
-		Allowed: true,
-		Patch:   patchBytes,
+		Allowed:  true,
+		Warnings: patchConfig.Warnings,
+		Patch:    patchBytes,
 		PatchType: func() *admissionv1.PatchType {
 			pt := admissionv1.PatchTypeJSONPatch
 			return &pt

@@ -18,7 +18,41 @@ package handler
 import (
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
+
+// workloadIdentitySkippedWarning is returned to the API client when a pod's
+// association enables workload identity but the cluster cannot serve the
+// socket. Kubernetes may truncate warnings longer than 256 characters.
+var workloadIdentitySkippedWarning = "workload identity was not configured for this pod: CSIDriver " +
+	pkg.WorkloadIdentityCSIDriver + " is not installed; update the EKS Pod Identity Agent add-on to a version that supports workload identity"
+
+// resolveWorkloadIdentity returns whether to inject the workload identity
+// socket into the pod, and any warnings for the API client.
+//
+// Injecting a CSI volume whose driver is not installed leaves the pod stuck
+// in ContainerCreating with a FailedMount event, and it then gets no AWS
+// credentials at all. When the workload identity CSIDriver is known to be
+// absent, the socket is skipped so the pod starts with Pod Identity
+// credentials only, and the client is warned. When presence is unknown, the
+// socket is injected as before.
+//
+// The check is cluster-wide. A cluster in the middle of an agent rollout has
+// the CSIDriver object while some nodes still run an older agent; a pod
+// scheduled to such a node can still fail to mount the socket.
+func (m *Modifier) resolveWorkloadIdentity(pod *corev1.Pod, requested bool) (bool, []string) {
+	if !requested || m.csiDriverChecker == nil {
+		return requested, nil
+	}
+	present, known := m.csiDriverChecker.Present(pkg.WorkloadIdentityCSIDriver)
+	if !known || present {
+		return true, nil
+	}
+	klog.Warningf("Skipping workload identity socket injection: CSIDriver %s not found. %s",
+		pkg.WorkloadIdentityCSIDriver, logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
+	workloadIdentitySkippedCounter.WithLabelValues("csi_driver_missing").Inc()
+	return false, []string{workloadIdentitySkippedWarning}
+}
 
 func addWorkloadIdentityToContainer(container *corev1.Container, enabled bool) bool {
 	if !enabled {
