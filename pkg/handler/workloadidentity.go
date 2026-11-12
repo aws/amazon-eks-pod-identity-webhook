@@ -18,7 +18,45 @@ package handler
 import (
 	"github.com/aws/amazon-eks-pod-identity-webhook/pkg"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
+
+// workloadIdentityRejectedMessage is returned to the API client when a pod's
+// association enables workload identity but the cluster cannot serve the
+// socket. For a pod created by a controller it shows up in the controller's
+// FailedCreate event, for example on the ReplicaSet of a Deployment.
+var workloadIdentityRejectedMessage = "workload identity is enabled for this pod's service account, but CSIDriver " +
+	pkg.WorkloadIdentityCSIDriver + " is not installed; update the EKS Pod Identity Agent add-on to a version that supports workload identity"
+
+// checkWorkloadIdentity reports whether the pod can be admitted with the
+// workload identity socket. It returns a non-empty rejection message when the
+// pod must be denied.
+//
+// Injecting a CSI volume whose driver is not installed leaves the pod stuck
+// in ContainerCreating with a generic FailedMount event, and it then gets no
+// AWS credentials at all. Starting the pod without the socket instead would
+// silently drop the workload identity the association asked for, so the
+// app would only fail at runtime. When the workload identity CSIDriver is
+// known to be absent, the pod is therefore denied with a message that names
+// the fix. When presence is unknown, the socket is injected as before, so a
+// setup problem in the webhook never blocks pods.
+//
+// The check is cluster-wide. A cluster in the middle of an agent rollout has
+// the CSIDriver object while some nodes still run an older agent; a pod
+// scheduled to such a node can still fail to mount the socket.
+func (m *Modifier) checkWorkloadIdentity(pod *corev1.Pod, requested bool) string {
+	if !requested || m.csiDriverChecker == nil {
+		return ""
+	}
+	present, known := m.csiDriverChecker.Present(pkg.WorkloadIdentityCSIDriver)
+	if !known || present {
+		return ""
+	}
+	klog.Warningf("Rejecting pod with workload identity: CSIDriver %s not found. %s",
+		pkg.WorkloadIdentityCSIDriver, logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
+	workloadIdentityRejectedCounter.WithLabelValues("csi_driver_missing").Inc()
+	return workloadIdentityRejectedMessage
+}
 
 func addWorkloadIdentityToContainer(container *corev1.Container, enabled bool) bool {
 	if !enabled {

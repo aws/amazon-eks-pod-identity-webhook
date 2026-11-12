@@ -63,6 +63,13 @@ var (
 		},
 		[]string{},
 	)
+	workloadIdentityRejectedCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "pod_identity_webhook_workload_identity_rejected_count",
+			Help: "Pods denied admission because their association enables workload identity but the cluster cannot serve it, by reason.",
+		},
+		[]string{"reason"},
+	)
 )
 
 func register() {
@@ -71,6 +78,7 @@ func register() {
 	prometheus.MustRegister(requestLatenciesSummary)
 	prometheus.MustRegister(webhookPodCount)
 	prometheus.MustRegister(missingSACounter)
+	prometheus.MustRegister(workloadIdentityRejectedCounter)
 }
 
 func monitor(verb, path string, httpCode int, reqStart time.Time) {

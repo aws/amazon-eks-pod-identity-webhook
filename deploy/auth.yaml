@@ -49,6 +49,14 @@ rules:
   - watch
   - list
 - apiGroups:
+  - storage.k8s.io
+  resources:
+  - csidrivers
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups:
   - certificates.k8s.io
   resources:
   - certificatesigningrequests

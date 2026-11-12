@@ -85,6 +85,14 @@ func WithSALookupGraceTime(saLookupGraceTime time.Duration) ModifierOpt {
 
 }
 
+// WithCSIDriverChecker makes the modifier deny a pod whose association
+// enables workload identity when the workload identity CSIDriver is known to
+// be absent from the cluster. Without a checker, the socket is injected
+// whenever the association enables workload identity.
+func WithCSIDriverChecker(c CSIDriverChecker) ModifierOpt {
+	return func(m *Modifier) { m.csiDriverChecker = c }
+}
+
 // NewModifier returns a Modifier with default values
 func NewModifier(random *rand.Rand, opts ...ModifierOpt) *Modifier {
 	if random == nil {
@@ -116,6 +124,7 @@ type Modifier struct {
 	tokenName                  string
 	saLookupGraceTime          time.Duration
 	rand                       rand.Rand
+	csiDriverChecker           CSIDriverChecker
 }
 
 type patchOperation struct {
@@ -135,6 +144,9 @@ type podPatchConfig struct {
 	WebIdentityPatchConfig          *webIdentityPatchConfig
 	ContainerCredentialsPatchConfig *containercredentials.PatchConfig
 	WorkloadIdentityEnabled         bool
+	// RejectionMessage, when set, denies the pod with this message instead
+	// of mutating it.
+	RejectionMessage string
 }
 
 type webIdentityPatchConfig struct {
@@ -457,6 +469,8 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 		tokenExpiration = m.addJitterToDefaultToken(tokenExpiration)
 		webhookPodCount.WithLabelValues("container_credentials").Inc()
 
+		rejectionMessage := m.checkWorkloadIdentity(pod, containerCredentialsPatchConfig.WorkloadIdentityEnabled)
+
 		return &podPatchConfig{
 			ContainersToSkip:                containersToSkip,
 			TokenExpiration:                 tokenExpiration,
@@ -468,6 +482,7 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 			WebIdentityPatchConfig:          nil,
 			ContainerCredentialsPatchConfig: containerCredentialsPatchConfig,
 			WorkloadIdentityEnabled:         containerCredentialsPatchConfig.WorkloadIdentityEnabled,
+			RejectionMessage:                rejectionMessage,
 		}
 	}
 
@@ -561,6 +576,18 @@ func (m *Modifier) MutatePod(ar *admissionv1.AdmissionReview) *admissionv1.Admis
 			"Service account did not have the right annotations or was not found in the cache. %s", logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
 		return &admissionv1.AdmissionResponse{
 			Allowed: true,
+		}
+	}
+
+	if patchConfig.RejectionMessage != "" {
+		return &admissionv1.AdmissionResponse{
+			Allowed: false,
+			Result: &metav1.Status{
+				Status:  metav1.StatusFailure,
+				Code:    http.StatusForbidden,
+				Reason:  metav1.StatusReasonForbidden,
+				Message: patchConfig.RejectionMessage,
+			},
 		}
 	}
 
