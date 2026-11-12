@@ -21,37 +21,41 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// workloadIdentitySkippedWarning is returned to the API client when a pod's
+// workloadIdentityRejectedMessage is returned to the API client when a pod's
 // association enables workload identity but the cluster cannot serve the
-// socket. Kubernetes may truncate warnings longer than 256 characters.
-var workloadIdentitySkippedWarning = "workload identity was not configured for this pod: CSIDriver " +
+// socket. For a pod created by a controller it shows up in the controller's
+// FailedCreate event, for example on the ReplicaSet of a Deployment.
+var workloadIdentityRejectedMessage = "workload identity is enabled for this pod's service account, but CSIDriver " +
 	pkg.WorkloadIdentityCSIDriver + " is not installed; update the EKS Pod Identity Agent add-on to a version that supports workload identity"
 
-// resolveWorkloadIdentity returns whether to inject the workload identity
-// socket into the pod, and any warnings for the API client.
+// checkWorkloadIdentity reports whether the pod can be admitted with the
+// workload identity socket. It returns a non-empty rejection message when the
+// pod must be denied.
 //
 // Injecting a CSI volume whose driver is not installed leaves the pod stuck
-// in ContainerCreating with a FailedMount event, and it then gets no AWS
-// credentials at all. When the workload identity CSIDriver is known to be
-// absent, the socket is skipped so the pod starts with Pod Identity
-// credentials only, and the client is warned. When presence is unknown, the
-// socket is injected as before.
+// in ContainerCreating with a generic FailedMount event, and it then gets no
+// AWS credentials at all. Starting the pod without the socket instead would
+// silently drop the workload identity the association asked for, so the
+// app would only fail at runtime. When the workload identity CSIDriver is
+// known to be absent, the pod is therefore denied with a message that names
+// the fix. When presence is unknown, the socket is injected as before, so a
+// setup problem in the webhook never blocks pods.
 //
 // The check is cluster-wide. A cluster in the middle of an agent rollout has
 // the CSIDriver object while some nodes still run an older agent; a pod
 // scheduled to such a node can still fail to mount the socket.
-func (m *Modifier) resolveWorkloadIdentity(pod *corev1.Pod, requested bool) (bool, []string) {
+func (m *Modifier) checkWorkloadIdentity(pod *corev1.Pod, requested bool) string {
 	if !requested || m.csiDriverChecker == nil {
-		return requested, nil
+		return ""
 	}
 	present, known := m.csiDriverChecker.Present(pkg.WorkloadIdentityCSIDriver)
 	if !known || present {
-		return true, nil
+		return ""
 	}
-	klog.Warningf("Skipping workload identity socket injection: CSIDriver %s not found. %s",
+	klog.Warningf("Rejecting pod with workload identity: CSIDriver %s not found. %s",
 		pkg.WorkloadIdentityCSIDriver, logContext(pod.Name, pod.GenerateName, pod.Spec.ServiceAccountName, pod.Namespace))
-	workloadIdentitySkippedCounter.WithLabelValues("csi_driver_missing").Inc()
-	return false, []string{workloadIdentitySkippedWarning}
+	workloadIdentityRejectedCounter.WithLabelValues("csi_driver_missing").Inc()
+	return workloadIdentityRejectedMessage
 }
 
 func addWorkloadIdentityToContainer(container *corev1.Container, enabled bool) bool {

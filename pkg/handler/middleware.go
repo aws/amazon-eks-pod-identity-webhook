@@ -63,10 +63,10 @@ var (
 		},
 		[]string{},
 	)
-	workloadIdentitySkippedCounter = prometheus.NewCounterVec(
+	workloadIdentityRejectedCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "pod_identity_webhook_workload_identity_skipped_count",
-			Help: "Pods whose association enables workload identity but were mutated without the workload identity socket, by reason.",
+			Name: "pod_identity_webhook_workload_identity_rejected_count",
+			Help: "Pods denied admission because their association enables workload identity but the cluster cannot serve it, by reason.",
 		},
 		[]string{"reason"},
 	)
@@ -78,7 +78,7 @@ func register() {
 	prometheus.MustRegister(requestLatenciesSummary)
 	prometheus.MustRegister(webhookPodCount)
 	prometheus.MustRegister(missingSACounter)
-	prometheus.MustRegister(workloadIdentitySkippedCounter)
+	prometheus.MustRegister(workloadIdentityRejectedCounter)
 }
 
 func monitor(verb, path string, httpCode int, reqStart time.Time) {

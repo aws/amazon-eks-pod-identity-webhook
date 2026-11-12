@@ -98,7 +98,7 @@ func main() {
 
 	resyncPeriod := flag.Duration("resync-period", 60*time.Second, "The period to resync the SA informer cache, in seconds.")
 
-	workloadIdentityRequireCSIDriver := flag.Bool("workload-identity-require-csi-driver", true, "Skip workload identity socket injection, and warn the client, when the "+pkg.WorkloadIdentityCSIDriver+" CSIDriver is not installed in the cluster. Needs get/list/watch on storage.k8s.io csidrivers; without it, the socket is injected as if this flag were off.")
+	workloadIdentityRequireCSIDriver := flag.Bool("workload-identity-require-csi-driver", true, "Deny pods whose association enables workload identity when the "+pkg.WorkloadIdentityCSIDriver+" CSIDriver is not installed in the cluster. Needs get/list/watch on storage.k8s.io csidrivers; without it, the socket is injected as if this flag were off.")
 
 	klog.InitFlags(goflag.CommandLine)
 	// Add klog CommandLine flags to pflag CommandLine

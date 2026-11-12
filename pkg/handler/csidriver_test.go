@@ -19,6 +19,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -105,38 +106,38 @@ func TestInformerCSIDriverChecker(t *testing.T) {
 
 func TestMutatePodWorkloadIdentityCSIDriverCheck(t *testing.T) {
 	testCases := []struct {
-		name                 string
-		workloadIdentity     bool
-		checker              *fakeCSIDriverChecker
-		wantWorkloadIdentity bool
-		wantWarning          bool
-		wantCheckerCalled    bool
+		name              string
+		workloadIdentity  bool
+		checker           *fakeCSIDriverChecker
+		wantRejected      bool
+		wantSocket        bool
+		wantCheckerCalled bool
 	}{
 		{
-			name:                 "no checker keeps injecting the socket",
-			workloadIdentity:     true,
-			wantWorkloadIdentity: true,
+			name:             "no checker keeps injecting the socket",
+			workloadIdentity: true,
+			wantSocket:       true,
 		},
 		{
-			name:                 "driver present injects the socket",
-			workloadIdentity:     true,
-			checker:              &fakeCSIDriverChecker{present: true, known: true},
-			wantWorkloadIdentity: true,
-			wantCheckerCalled:    true,
-		},
-		{
-			name:              "driver absent skips the socket and warns",
+			name:              "driver present injects the socket",
 			workloadIdentity:  true,
-			checker:           &fakeCSIDriverChecker{present: false, known: true},
-			wantWarning:       true,
+			checker:           &fakeCSIDriverChecker{present: true, known: true},
+			wantSocket:        true,
 			wantCheckerCalled: true,
 		},
 		{
-			name:                 "unknown presence keeps injecting the socket",
-			workloadIdentity:     true,
-			checker:              &fakeCSIDriverChecker{present: false, known: false},
-			wantWorkloadIdentity: true,
-			wantCheckerCalled:    true,
+			name:              "driver absent denies the pod",
+			workloadIdentity:  true,
+			checker:           &fakeCSIDriverChecker{present: false, known: true},
+			wantRejected:      true,
+			wantCheckerCalled: true,
+		},
+		{
+			name:              "unknown presence keeps injecting the socket",
+			workloadIdentity:  true,
+			checker:           &fakeCSIDriverChecker{present: false, known: false},
+			wantSocket:        true,
+			wantCheckerCalled: true,
 		},
 		{
 			name:             "workload identity disabled never consults the checker",
@@ -162,19 +163,36 @@ func TestMutatePodWorkloadIdentityCSIDriverCheck(t *testing.T) {
 			require.NoError(t, err)
 
 			response := modifier.MutatePod(getValidReview(podBytes))
+			assert.Empty(t, response.Warnings)
+			if testCase.checker != nil {
+				assert.Equal(t, testCase.wantCheckerCalled, testCase.checker.calls > 0)
+			}
+
+			if testCase.wantRejected {
+				// Denied with a 403 that names the driver and the fix, and no patch.
+				require.False(t, response.Allowed)
+				require.NotNil(t, response.Result)
+				assert.Equal(t, int32(http.StatusForbidden), response.Result.Code)
+				assert.Equal(t, metav1.StatusReasonForbidden, response.Result.Reason)
+				assert.Contains(t, response.Result.Message, pkg.WorkloadIdentityCSIDriver)
+				assert.Contains(t, response.Result.Message, "update the EKS Pod Identity Agent add-on")
+				assert.Empty(t, response.Patch)
+				return
+			}
+
 			require.True(t, response.Allowed)
 			patch := decodePatch(t, response.Patch)
 			containers := containersFromPatch(t, patch)
 			require.Len(t, containers, 1)
 			container := containers[0]
 
-			// Pod Identity credentials are injected in every case.
+			// Pod Identity credentials are injected whenever the pod is admitted.
 			assert.True(t, containerHasEnv(container, pkg.AwsEnvVarContainerCredentialsFullUri))
 			assert.True(t, containerHasEnv(container, pkg.AwsEnvVarContainerAuthorizationTokenFile))
 			assert.NotNil(t, volumeFromPatch(t, patch, "eks-pod-identity-token"))
 
 			socketVolume := volumeFromPatch(t, patch, pkg.WorkloadIdentitySocketVolumeName)
-			if testCase.wantWorkloadIdentity {
+			if testCase.wantSocket {
 				assert.True(t, containerHasEnv(container, pkg.SpiffeEnvVarEndpointSocket))
 				assert.True(t, containerHasVolumeMount(container, pkg.WorkloadIdentitySocketVolumeName))
 				assert.NotNil(t, socketVolume)
@@ -182,18 +200,6 @@ func TestMutatePodWorkloadIdentityCSIDriverCheck(t *testing.T) {
 				assert.False(t, containerHasEnv(container, pkg.SpiffeEnvVarEndpointSocket))
 				assert.False(t, containerHasVolumeMount(container, pkg.WorkloadIdentitySocketVolumeName))
 				assert.Nil(t, socketVolume)
-			}
-
-			if testCase.wantWarning {
-				require.Len(t, response.Warnings, 1)
-				assert.Contains(t, response.Warnings[0], pkg.WorkloadIdentityCSIDriver)
-				assert.LessOrEqual(t, len(response.Warnings[0]), 256)
-			} else {
-				assert.Empty(t, response.Warnings)
-			}
-
-			if testCase.checker != nil {
-				assert.Equal(t, testCase.wantCheckerCalled, testCase.checker.calls > 0)
 			}
 		})
 	}

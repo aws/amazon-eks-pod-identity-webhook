@@ -85,10 +85,10 @@ func WithSALookupGraceTime(saLookupGraceTime time.Duration) ModifierOpt {
 
 }
 
-// WithCSIDriverChecker makes the modifier skip workload identity socket
-// injection when the workload identity CSIDriver is known to be absent from
-// the cluster. Without a checker, the socket is injected whenever the
-// association enables workload identity.
+// WithCSIDriverChecker makes the modifier deny a pod whose association
+// enables workload identity when the workload identity CSIDriver is known to
+// be absent from the cluster. Without a checker, the socket is injected
+// whenever the association enables workload identity.
 func WithCSIDriverChecker(c CSIDriverChecker) ModifierOpt {
 	return func(m *Modifier) { m.csiDriverChecker = c }
 }
@@ -144,8 +144,9 @@ type podPatchConfig struct {
 	WebIdentityPatchConfig          *webIdentityPatchConfig
 	ContainerCredentialsPatchConfig *containercredentials.PatchConfig
 	WorkloadIdentityEnabled         bool
-	// Warnings are returned to the API client in the admission response.
-	Warnings []string
+	// RejectionMessage, when set, denies the pod with this message instead
+	// of mutating it.
+	RejectionMessage string
 }
 
 type webIdentityPatchConfig struct {
@@ -468,7 +469,7 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 		tokenExpiration = m.addJitterToDefaultToken(tokenExpiration)
 		webhookPodCount.WithLabelValues("container_credentials").Inc()
 
-		workloadIdentityEnabled, warnings := m.resolveWorkloadIdentity(pod, containerCredentialsPatchConfig.WorkloadIdentityEnabled)
+		rejectionMessage := m.checkWorkloadIdentity(pod, containerCredentialsPatchConfig.WorkloadIdentityEnabled)
 
 		return &podPatchConfig{
 			ContainersToSkip:                containersToSkip,
@@ -480,8 +481,8 @@ func (m *Modifier) buildPodPatchConfig(pod *corev1.Pod) *podPatchConfig {
 			TokenPath:                       containerCredentialsPatchConfig.TokenPath,
 			WebIdentityPatchConfig:          nil,
 			ContainerCredentialsPatchConfig: containerCredentialsPatchConfig,
-			WorkloadIdentityEnabled:         workloadIdentityEnabled,
-			Warnings:                        warnings,
+			WorkloadIdentityEnabled:         containerCredentialsPatchConfig.WorkloadIdentityEnabled,
+			RejectionMessage:                rejectionMessage,
 		}
 	}
 
@@ -578,6 +579,18 @@ func (m *Modifier) MutatePod(ar *admissionv1.AdmissionReview) *admissionv1.Admis
 		}
 	}
 
+	if patchConfig.RejectionMessage != "" {
+		return &admissionv1.AdmissionResponse{
+			Allowed: false,
+			Result: &metav1.Status{
+				Status:  metav1.StatusFailure,
+				Code:    http.StatusForbidden,
+				Reason:  metav1.StatusReasonForbidden,
+				Message: patchConfig.RejectionMessage,
+			},
+		}
+	}
+
 	patch, changed := m.getPodSpecPatch(&pod, patchConfig)
 	patchBytes, err := json.Marshal(patch)
 	if err != nil {
@@ -598,9 +611,8 @@ func (m *Modifier) MutatePod(ar *admissionv1.AdmissionReview) *admissionv1.Admis
 	}
 
 	return &admissionv1.AdmissionResponse{
-		Allowed:  true,
-		Warnings: patchConfig.Warnings,
-		Patch:    patchBytes,
+		Allowed: true,
+		Patch:   patchBytes,
 		PatchType: func() *admissionv1.PatchType {
 			pt := admissionv1.PatchTypeJSONPatch
 			return &pt
