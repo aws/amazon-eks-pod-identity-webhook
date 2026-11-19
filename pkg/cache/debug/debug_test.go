@@ -2,14 +2,16 @@ package debug
 
 import (
 	"encoding/json"
-	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
 	"io"
 	"io/ioutil"
-	corev1 "k8s.io/api/core/v1"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
+
+	"github.com/aws/amazon-eks-pod-identity-webhook/pkg/cache"
+	admissionv1 "k8s.io/api/admission/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // generateServiceAccount generates n service accounts with arbitrary contents
@@ -95,5 +97,34 @@ func TestLister(t *testing.T) {
 			}
 
 		})
+	}
+}
+
+func TestDeny(t *testing.T) {
+	debugger := Dumper{}
+	ts := httptest.NewServer(
+		http.HandlerFunc(debugger.Deny),
+	)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL)
+	if err != nil {
+		t.Fatalf("Failed to make request: %v", err)
+	}
+	responseBytes, err := ioutil.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("Failed to read response: %v", err)
+	}
+
+	admissionReview := admissionv1.AdmissionReview{}
+	if err := json.Unmarshal(responseBytes, &admissionReview); err != nil {
+		t.Fatalf("Failed to unmarshal admission/v1 AdmissionReview: %v", err)
+	}
+	if admissionReview.Response.Allowed {
+		t.Errorf("Expected Response.Allowed to be false")
+	}
+	if admissionReview.Response.Result.Message != "Test deny message" {
+		t.Errorf("Unexpected message: %q", admissionReview.Response.Result.Message)
 	}
 }
